@@ -3,9 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/auth/useAuth';
 import { useMessageViewModel } from '@/components/screens/messages/viewModel/MessagesViewModel';
-import { useGroupConversationManager } from '@/components/screens/messages/viewModel/GroupConversationManager'; // Import new hook
-import { ConversationWithMembers } from '@/components/screens/messages/viewModel/ConversationViewModel';
-import { format } from 'date-fns';
+import { useGroupConversationManager } from '@/components/screens/messages/viewModel/GroupConversationManager'; 
 import { message as antdMessage, Spin, Modal } from 'antd';
 import { AiOutlineSend, AiOutlineSearch, AiOutlineUsergroupAdd } from "react-icons/ai";
 import { FaRegSmile } from 'react-icons/fa';
@@ -22,16 +20,13 @@ const MessagesFeature = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
   
-  // Existing view models
   const {
     messageError,
-    setMessageError,
     newMessage,
     setNewMessage,
     activeFriend,         
     setActiveFriend,
     messages,
-    fetchMessages,
     replyTo,
     setReplyTo,
     messagesEndRef,
@@ -48,24 +43,15 @@ const MessagesFeature = () => {
     forceUpdateTempMessages
   } = useMessageViewModel();
 
-  // New group conversation manager
   const {
-    conversationMembers,
-    fetchConversationMembers,
     isCreatingGroup,
     groupError,
-    handleGroupCreation,
-    findExistingGroupConversation
   } = useGroupConversationManager();
 
   const {
-    setActiveConversationId,
-    conversations,
     fetchAllConversations,
-    isLoadingConversations
   } = useConversationViewModel();
 
-  // UI state
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [groupSearch, setGroupSearch] = useState("");
@@ -155,7 +141,6 @@ const MessagesFeature = () => {
     }
   }, [user, fetchFriends]);
 
-  // Show error modal if group creation fails
   useEffect(() => {
     if (groupError) {
       setShowGroupCreationError(true);
@@ -209,7 +194,6 @@ const MessagesFeature = () => {
     setShowSidebar(true);
   };
 
-  // Function to create a group chat
   const createGroupChat = async () => {
     if (selectedFriends.length < 2) {
       antdMessage.error({
@@ -401,13 +385,9 @@ const MessagesFeature = () => {
             ) : currentMessages.length > 0 ? (
               <>
                 {(() => {
-                  // Existing code for rendering messages
-                  // ...
-                  // Nhóm tin nhắn theo ngày
                   const messagesByDate: Record<string, MessageResponseModel[]> = {};
                   
                   currentMessages.forEach(message => {
-                    // Lấy ngày từ created_at (yyyy-MM-dd)
                     const date = new Date(message.created_at || new Date());
                     const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
                     
@@ -418,29 +398,24 @@ const MessagesFeature = () => {
                     messagesByDate[dateKey].push(message);
                   });
                   
-                  // Render từng nhóm tin nhắn theo ngày
                   return Object.entries(messagesByDate)
-                    .sort(([dateA], [dateB]) => dateA.localeCompare(dateB)) // Sắp xếp theo ngày tăng dần
+                    .sort(([dateA], [dateB]) => dateA.localeCompare(dateB)) 
                     .map(([dateKey, messagesForDate]) => {
-                      // Format ngày hiển thị
                       const [year, month, day] = dateKey.split('-').map(Number);
                       const formattedDate = `${day}/${month}/${year}`;
                       
                       return (
                         <div key={dateKey} className="mb-6">
-                          {/* Tiêu đề ngày */}
                           <div className="flex justify-center mb-4">
                             <div className="bg-gray-200 rounded-full px-4 py-1 text-sm text-gray-600">
                               {formattedDate}
                             </div>
                           </div>
                           
-                          {/* Tin nhắn trong ngày */}
                           {messagesForDate.map((message, index) => {
                             const isUser = isUserMessage(message);
                             const messageContent = message.text || message.content || "";
                             
-                            // Format thời gian tin nhắn (hh:mm:ss)
                             const messageDate = new Date(message.created_at || new Date());
                             const timeString = `${String(messageDate.getHours()).padStart(2, '0')}:${String(messageDate.getMinutes()).padStart(2, '0')}:${String(messageDate.getSeconds()).padStart(2, '0')}`;
                             

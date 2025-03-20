@@ -7,7 +7,6 @@ import { useAuth } from '@/context/auth/useAuth';
 import { useConversationViewModel } from './ConversationViewModel';
 import { defaultMessagesRepo } from '@/api/features/messages/MessagesRepo';
 import { useWebSocketConnect } from './WebSocketConnect';
-import { ConversationDetailResponseModel } from '@/api/features/messages/models/ConversationDetailModel';
 
 export const useMessageViewModel = () => {
   const { user, localStrings } = useAuth();
@@ -34,7 +33,6 @@ export const useMessageViewModel = () => {
     initializeConversation,
     sendMessage,
     isConnected,
-    debugMessagesState,
     updateTemporaryMessages
   } = useWebSocketConnect();
 
@@ -149,18 +147,13 @@ export const useMessageViewModel = () => {
             [friendId]: sortedMessages
           };
         });
-        
-        // Log để debug
-        setTimeout(() => {
-          debugMessagesState();
-        }, 500);
       }
     } catch (err) {
       console.error("Lỗi khi tải tin nhắn", err);
     } finally {
       setIsLoadingMessages(false);
     }
-  }, [activeFriend, setMessages, debugMessagesState]);
+  }, [activeFriend, setMessages]);
 
   // Tìm friend dựa vào conversation ID
   const findFriendByConversationId = useCallback(async (conversationId: string): Promise<FriendResponseModel | null> => {
@@ -472,13 +465,8 @@ const createNewConversation = useCallback(async (userId: string, friendId: strin
       updateTemporaryMessages(activeFriend.id || '');
     }, 5000);
     
-    // Log sau khi gửi tin nhắn để debug
-    setTimeout(() => {
-      debugMessagesState();
-    }, 500);
-    
     return true;
-  }, [activeFriend, activeConversationId, user, sendMessage, setMessages, debugMessagesState, updateTemporaryMessages]);
+  }, [activeFriend, activeConversationId, user, sendMessage, setMessages, updateTemporaryMessages]);
 
   // Cập nhật tất cả tin nhắn tạm thời thành bình thường
   const forceUpdateTempMessages = useCallback(() => {
@@ -512,7 +500,6 @@ const createNewConversation = useCallback(async (userId: string, friendId: strin
     handleSendMessage,
     isConnected,
     isLoadingMessages,
-    debugMessagesState,
     forceUpdateTempMessages,
     findFriendByConversationId
   };
