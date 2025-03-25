@@ -33,7 +33,6 @@ export const useWebSocketConnect = () => {
     
     useEffect(() => {
         if (activeConversationId && user?.id) {
-            
             if (wsRef.current) {
                 wsRef.current.close();
                 wsRef.current = null;
@@ -116,10 +115,13 @@ export const useWebSocketConnect = () => {
                     const senderId = messageData.user_id || (messageData.user && messageData.user.id);
                     const timestamp = messageData.created_at || new Date().toISOString();
                     const messageId = messageData.id || `${senderId}_${timestamp}`;
-
-                    const friendId = senderId === user?.id 
-                        ? (activeFriend?.id || '') 
-                        : senderId;
+                    
+                    const isGroupChat = activeFriend && Object.prototype.hasOwnProperty.call(activeFriend, 'isGroup') && 
+                                       (activeFriend as any).isGroup === true;
+                    
+                    const friendId = isGroupChat 
+                        ? activeConversationId 
+                        : (senderId === user?.id ? (activeFriend?.id || '') : senderId);
                     
                     const normalizedMessage: MessageResponseModel = {
                         id: messageId,
@@ -136,7 +138,7 @@ export const useWebSocketConnect = () => {
                         },
                         parent_id: messageData.parent_id || messageData.reply_to_id,
                         reply_to: messageData.reply_to,
-                        isTemporary: false // Đảm bảo tin nhắn không còn là tạm thời
+                        isTemporary: false
                     };
                     
                     setMessages(prevMessages => {
@@ -226,7 +228,7 @@ export const useWebSocketConnect = () => {
             wsRef.current = ws;
         } catch (error) {
         }
-    }, [user, activeFriend]);
+    }, [user, activeFriend, activeConversationId]);
     
     const sendMessage = useCallback((message: string, replyToMessage?: MessageResponseModel) => {
         if (!activeConversationId || !activeFriend || !message.trim()) {
@@ -269,7 +271,7 @@ export const useWebSocketConnect = () => {
         } catch (error) {
             return false;
         }
-    }, [activeConversationId, activeFriend, user, wsRef.current]);
+    }, [activeConversationId, activeFriend, user]);
     
     const updateTemporaryMessages = useCallback((friendId: string) => {
         setMessages(prevMessages => {
@@ -285,7 +287,7 @@ export const useWebSocketConnect = () => {
                   const createdAt = new Date(msg.created_at || now).getTime();
                   const elapsedSeconds = (now - createdAt) / 1000;
                   
-                  if (elapsedSeconds > 0.2) {
+                  if (elapsedSeconds > 5) {
                       updatedMessages[i] = {
                           ...msg,
                           isTemporary: false
