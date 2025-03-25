@@ -3,8 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/auth/useAuth';
 import { useMessageViewModel } from '@/components/screens/messages/viewModel/MessagesViewModel';
-import { useGroupConversationManager } from '@/components/screens/messages/viewModel/GroupConversationManager'; // Import new hook
-import { ConversationWithMembers } from '@/components/screens/messages/viewModel/ConversationViewModel';
+import { useGroupConversationManager } from '@/components/screens/messages/viewModel/components/GroupConversationManager'; // Import new hook
+import { ConversationWithMembers } from '@/components/screens/messages/viewModel/components/ConversationViewModel';
 import { format } from 'date-fns';
 import { message as antdMessage, Spin, Modal } from 'antd';
 import { AiOutlineSend, AiOutlineSearch, AiOutlineUsergroupAdd } from "react-icons/ai";
@@ -15,23 +15,20 @@ import { CiCircleChevDown } from "react-icons/ci";
 import { useRouter, useSearchParams } from 'next/navigation';
 import { IoMdArrowBack } from "react-icons/io";
 import { MessageResponseModel } from '@/api/features/messages/models/MessageModel';
-import { useConversationViewModel } from '@/components/screens/messages/viewModel/ConversationViewModel';
+import { useConversationViewModel } from '@/components/screens/messages/viewModel/components/ConversationViewModel';
 
 const MessagesFeature = () => {
   const { user, localStrings } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   
-  // Existing view models
   const {
     messageError,
-    setMessageError,
     newMessage,
     setNewMessage,
     activeFriend,         
     setActiveFriend,
     messages,
-    fetchMessages,
     replyTo,
     setReplyTo,
     messagesEndRef,
@@ -48,24 +45,15 @@ const MessagesFeature = () => {
     forceUpdateTempMessages
   } = useMessageViewModel();
 
-  // New group conversation manager
   const {
-    conversationMembers,
-    fetchConversationMembers,
     isCreatingGroup,
     groupError,
-    handleGroupCreation,
-    findExistingGroupConversation
   } = useGroupConversationManager();
 
   const {
-    setActiveConversationId,
-    conversations,
     fetchAllConversations,
-    isLoadingConversations
   } = useConversationViewModel();
 
-  // UI state
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [groupSearch, setGroupSearch] = useState("");

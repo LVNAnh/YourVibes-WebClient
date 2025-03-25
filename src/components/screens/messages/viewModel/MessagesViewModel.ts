@@ -4,9 +4,9 @@ import { defaultProfileRepo } from '@/api/features/profile/ProfileRepository';
 import { MessageResponseModel } from '@/api/features/messages/models/MessageModel';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/context/auth/useAuth';
-import { useConversationViewModel } from './ConversationViewModel';
+import { useConversationViewModel } from './components/ConversationViewModel';
 import { defaultMessagesRepo } from '@/api/features/messages/MessagesRepo';
-import { useWebSocketConnect } from './WebSocketConnect';
+import { useWebSocketConnect } from './components/WebSocketConnect';
 import { ConversationDetailResponseModel } from '@/api/features/messages/models/ConversationDetailModel';
 
 export const useMessageViewModel = () => {
