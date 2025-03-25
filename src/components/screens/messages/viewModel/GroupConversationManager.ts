@@ -61,7 +61,6 @@ export const useGroupConversationManager = () => {
             }
           });
         } catch (error) {
-          console.error(`Lỗi khi lấy thành viên cho cuộc trò chuyện ${conversation.id}`, error);
         }
       }
 
@@ -73,14 +72,11 @@ export const useGroupConversationManager = () => {
             members.push(userRes.data);
           }
         } catch (error) {
-          console.error(`Lỗi khi lấy thông tin người dùng ${userId}`, error);
         }
       }
 
       setConversationMembers(members);
-      console.log(`Đã tìm thấy ${members.length} người dùng trong các cuộc trò chuyện`);
     } catch (error) {
-      console.error("Lỗi khi lấy danh sách thành viên các cuộc trò chuyện", error);
     }
   }, [user?.id]);
 
@@ -92,7 +88,6 @@ export const useGroupConversationManager = () => {
 
   const handleGroupCreation = useCallback(async (memberIds: string[]) => {
     if (!user?.id) {
-      console.error("Không thể tạo nhóm: Người dùng chưa đăng nhập");
       return;
     }
 
@@ -110,7 +105,6 @@ export const useGroupConversationManager = () => {
       const existingGroupId = await findExistingGroupConversation(sortedMemberIds);
       
       if (existingGroupId) {
-        console.log("Đã tìm thấy nhóm chat hiện có với các thành viên tương tự:", existingGroupId);
         router.push(`/messages?conversation=${existingGroupId}`);
         return;
       }
@@ -118,7 +112,6 @@ export const useGroupConversationManager = () => {
       const conversationId = await createNewGroupConversation(sortedMemberIds);
       
       if (conversationId) {
-        console.log("Đã tạo nhóm chat mới với ID:", conversationId);
         router.push(`/messages?conversation=${conversationId}`);
       } else {
         setGroupError(localStrings.Messages.GroupCreationFailed || "Không thể tạo nhóm chat");
@@ -175,7 +168,6 @@ export const useGroupConversationManager = () => {
         }
       }
     } catch (error) {
-      console.error("Lỗi khi tìm kiếm cuộc trò chuyện nhóm hiện có:", error);
     }
 
     return null;
@@ -198,7 +190,6 @@ export const useGroupConversationManager = () => {
             memberNames.push(profileRes.data.name || "Người dùng");
           }
         } catch (error) {
-          console.error(`Không thể lấy thông tin cho người dùng ${id}`, error);
           memberNames.push("Người dùng");
         }
       }
@@ -233,7 +224,6 @@ export const useGroupConversationManager = () => {
 
       return conversationId;
     } catch (error) {
-      console.error("Lỗi khi tạo nhóm chat mới:", error);
       return null;
     }
   };

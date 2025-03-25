@@ -19,7 +19,6 @@ export const useWebSocketConnect = () => {
     
     useEffect(() => {
         return () => {
-            console.log("Cleanup WebSocket và heartbeat interval");
             if (heartbeatIntervalRef.current) {
                 clearInterval(heartbeatIntervalRef.current);
                 heartbeatIntervalRef.current = null;
@@ -34,10 +33,8 @@ export const useWebSocketConnect = () => {
     
     useEffect(() => {
         if (activeConversationId && user?.id) {
-            console.log("activeConversationId thay đổi:", activeConversationId);
             
             if (wsRef.current) {
-                console.log("Đóng kết nối WebSocket hiện tại do conversationId thay đổi");
                 wsRef.current.close();
                 wsRef.current = null;
             }
@@ -53,21 +50,17 @@ export const useWebSocketConnect = () => {
         if (!user?.id) return;
         
         try {
-            console.log("Khởi tạo cuộc trò chuyện với ID:", conversationId);
             setActiveConversationId(conversationId);
         } catch (err) {
-            console.error("Lỗi khi khởi tạo cuộc trò chuyện", err);
         }
     };
     
     const connectToWebSocket = useCallback((conversationId: string) => {
         if (!user?.id) {
-            console.error("Không thể kết nối WebSocket: user.id không tồn tại");
             return;
         }
         
         if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) {
-            console.log("Đóng kết nối WebSocket hiện tại trước khi tạo mới");
             wsRef.current.close();
             wsRef.current = null;
         }
@@ -78,7 +71,6 @@ export const useWebSocketConnect = () => {
         }
         
         const wsUrl = `${ApiPath.CONNECT_TO_WEBSOCKET}${user.id}?conversation_id=${conversationId}`;
-        console.log("Đang kết nối tới WebSocket URL:", wsUrl);
         
         try {
             const ws = new WebSocket(wsUrl);
@@ -86,20 +78,16 @@ export const useWebSocketConnect = () => {
             
             connectionTimeoutId = setTimeout(() => {
                 if (ws.readyState !== WebSocket.OPEN) {
-                    console.log("Kết nối WebSocket hết thời gian chờ, đang thử lại...");
                     ws.close();
                     
                     reconnectAttemptsRef.current++;
                     if (reconnectAttemptsRef.current <= maxReconnectAttempts) {
                         setTimeout(() => connectToWebSocket(conversationId), 2000);
-                    } else {
-                        console.error("Đã đạt đến số lần thử kết nối tối đa");
                     }
                 }
             }, 5000);
             
             ws.onopen = () => {
-                console.log("Kết nối WebSocket thành công");
                 clearTimeout(connectionTimeoutId);
                 setIsConnected(true);
                 reconnectAttemptsRef.current = 0;
@@ -117,12 +105,10 @@ export const useWebSocketConnect = () => {
             };
             
             ws.onmessage = (event) => {
-                console.log("Đã nhận tin nhắn WebSocket:", event.data);
                 try {
                     const messageData = JSON.parse(event.data);
                     
                     if (!messageData.content && !messageData.text) {
-                        console.log("Tin nhắn không chứa nội dung, có thể là heartbeat");
                         return;
                     }
                     
@@ -131,12 +117,6 @@ export const useWebSocketConnect = () => {
                     const timestamp = messageData.created_at || new Date().toISOString();
                     const messageId = messageData.id || `${senderId}_${timestamp}`;
 
-                    console.log("Xử lý tin nhắn:", { 
-                        messageId, 
-                        senderId, 
-                        content: content.substring(0, 20) + (content.length > 20 ? "..." : "") 
-                    });
-                    
                     const friendId = senderId === user?.id 
                         ? (activeFriend?.id || '') 
                         : senderId;
@@ -156,7 +136,7 @@ export const useWebSocketConnect = () => {
                         },
                         parent_id: messageData.parent_id || messageData.reply_to_id,
                         reply_to: messageData.reply_to,
-                        isTemporary: false 
+                        isTemporary: false // Đảm bảo tin nhắn không còn là tạm thời
                     };
                     
                     setMessages(prevMessages => {
@@ -164,7 +144,6 @@ export const useWebSocketConnect = () => {
                         
                         if (!updatedMessages[friendId]) {
                             updatedMessages[friendId] = [];
-                            console.log(`Tạo mới danh sách tin nhắn cho friend ${friendId}`);
                         }
                         
                         const existingMsgIndex = updatedMessages[friendId].findIndex(
@@ -172,7 +151,6 @@ export const useWebSocketConnect = () => {
                         );
 
                         if (existingMsgIndex !== -1) {
-                            console.log("Tin nhắn đã tồn tại, cập nhật thông tin");
                             updatedMessages[friendId][existingMsgIndex] = {
                                 ...updatedMessages[friendId][existingMsgIndex],
                                 ...normalizedMessage,
@@ -189,8 +167,6 @@ export const useWebSocketConnect = () => {
                                      sentMessagesRef.current.has(msg.id || '') && 
                                      sentMessagesRef.current.get(msg.id || '') === content)) {
                                     
-                                    console.log("Đã tìm thấy và cập nhật tin nhắn tạm thời:", msg.id);
-                                    
                                     updatedMessages[friendId][i] = {
                                         ...msg,
                                         ...normalizedMessage,
@@ -204,24 +180,19 @@ export const useWebSocketConnect = () => {
                             }
                             
                             if (!foundTempMessage) {
-                                console.log("Thêm tin nhắn mới của mình vào danh sách (không tìm thấy tạm thời)");
                                 updatedMessages[friendId].push(normalizedMessage);
                             }
                         } else {
-                            console.log("Thêm tin nhắn mới từ người khác vào danh sách");
                             updatedMessages[friendId].push(normalizedMessage);
                         }
                         
-                        console.log(`Sau khi cập nhật, có ${updatedMessages[friendId].length} tin nhắn với friend ${friendId}`);
                         return updatedMessages;
                     });
                 } catch (error) {
-                    console.error("Lỗi khi xử lý tin nhắn WebSocket:", error);
                 }
             };
             
             ws.onerror = (error) => {
-                console.error("Lỗi WebSocket:", error);
                 clearTimeout(connectionTimeoutId);
                 setIsConnected(false);
                 
@@ -229,7 +200,6 @@ export const useWebSocketConnect = () => {
                 if (reconnectAttemptsRef.current <= maxReconnectAttempts) {
                     setTimeout(() => {
                         if (wsRef.current === ws) {
-                            console.log("Đang kết nối lại sau lỗi WebSocket...");
                             connectToWebSocket(conversationId);
                         }
                     }, 3000);
@@ -237,7 +207,6 @@ export const useWebSocketConnect = () => {
             };
             
             ws.onclose = (event) => {
-                console.log("Kết nối WebSocket đã đóng", event.code, event.reason);
                 clearTimeout(connectionTimeoutId);
                 setIsConnected(false);
                 
@@ -247,7 +216,6 @@ export const useWebSocketConnect = () => {
                 }
                 
                 if (wsRef.current === ws) {
-                    console.log("Kết nối đã đóng bất ngờ, đang kết nối lại...");
                     reconnectAttemptsRef.current++;
                     if (reconnectAttemptsRef.current <= maxReconnectAttempts) {
                         setTimeout(() => connectToWebSocket(conversationId), 3000);
@@ -257,18 +225,15 @@ export const useWebSocketConnect = () => {
             
             wsRef.current = ws;
         } catch (error) {
-            console.error("Lỗi khi khởi tạo WebSocket:", error);
         }
     }, [user, activeFriend]);
     
     const sendMessage = useCallback((message: string, replyToMessage?: MessageResponseModel) => {
         if (!activeConversationId || !activeFriend || !message.trim()) {
-            console.error("Không thể gửi tin nhắn: thiếu thông tin cần thiết");
             return false;
         }
         
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-            console.error("Không thể gửi tin nhắn qua WebSocket: kết nối không sẵn sàng");
             return false;
         }
         
@@ -296,15 +261,12 @@ export const useWebSocketConnect = () => {
                 });
             }
             
-            console.log("Gửi tin nhắn qua WebSocket:", messageObj);
-            
             wsRef.current.send(JSON.stringify(messageObj));
             
             sentMessagesRef.current.set(tempId, message);
             
             return true;
         } catch (error) {
-            console.error("Lỗi khi gửi tin nhắn qua WebSocket:", error);
             return false;
         }
     }, [activeConversationId, activeFriend, user, wsRef.current]);
