@@ -8,7 +8,6 @@ import { useConversationViewModel } from './components/ConversationViewModel';
 import { defaultMessagesRepo } from '@/api/features/messages/MessagesRepo';
 import { useWebSocketConnect } from './components/WebSocketConnect';
 import { ConversationDetailResponseModel } from '@/api/features/messages/models/ConversationDetailModel';
-import { GroupMember } from './components/GroupConversationManager';
 
 export const useMessageViewModel = () => {
   const { user, localStrings } = useAuth();
@@ -43,17 +42,8 @@ export const useMessageViewModel = () => {
   }, [messages]);
 
   useEffect(() => {
-    if (activeFriend && user?.id) {
-      const isGroup = Object.prototype.hasOwnProperty.call(activeFriend, 'isGroup') && 
-                     (activeFriend as any).isGroup === true;
-      
-      if (isGroup) {
-        setActiveConversationId(activeFriend.id || '');
-        initializeConversation(activeFriend.id || '');
-        fetchMessages(activeFriend.id || '');
-      } else {
-        setupConversationForFriend(activeFriend.id || '');
-      }
+    if (activeFriend && activeFriend.id && user?.id) {
+      setupConversationForFriend(activeFriend.id);
     }
   }, [activeFriend, user?.id]);
   
@@ -76,6 +66,7 @@ export const useMessageViewModel = () => {
       const existingConvId = await getExistingConversation(user.id, friendId);
       
       if (existingConvId) {
+        console.log("Đã tìm thấy cuộc trò chuyện:", existingConvId);
         setActiveConversationId(existingConvId);
         initializeConversation(existingConvId);
         fetchMessages(existingConvId);
@@ -85,9 +76,11 @@ export const useMessageViewModel = () => {
         if (newConversation) {
           setActiveConversationId(newConversation);
           initializeConversation(newConversation);
+        } else {
         }
       }
     } catch (error) {
+      console.error("Lỗi khi thiết lập cuộc trò chuyện:", error);
     } finally {
       setIsLoadingMessages(false);
     }
@@ -131,8 +124,12 @@ export const useMessageViewModel = () => {
             [friendId]: sortedMessages
           };
         });
+        
+        setTimeout(() => {
+        }, 500);
       }
     } catch (err) {
+      console.error("Lỗi khi tải tin nhắn", err);
     } finally {
       setIsLoadingMessages(false);
     }
@@ -144,79 +141,35 @@ export const useMessageViewModel = () => {
     try {
       setIsLoadingMessages(true);
       
-      const conversationResponse = await defaultMessagesRepo.getConversationById({
-        conversation_id: conversationId
+      const response = await defaultMessagesRepo.getConversationDetailByUserID({ 
+        conversation_id: conversationId 
       });
       
-      if (conversationResponse.data) {
-        const conversationDetails = conversationResponse.data;
-        
-        const membersResponse = await defaultMessagesRepo.getConversationDetailByUserID({
-          conversation_id: conversationId
-        });
-        
-        if (membersResponse.data) {
-          const members = Array.isArray(membersResponse.data) ? membersResponse.data : [membersResponse.data];
-          
-          if (members.length > 2) {
-            const groupMembers: GroupMember[] = [];
-            
-            for (const member of members) {
-              if (member.user_id) {
-                try {
-                  const userResponse = await defaultProfileRepo.getProfile(member.user_id);
-                  if (userResponse.data) {
-                    groupMembers.push({
-                      id: userResponse.data.id || "",
-                      name: userResponse.data.name,
-                      family_name: userResponse.data.family_name,
-                      avatar_url: userResponse.data.avatar_url
-                    });
-                  }
-                } catch (error) {
-                }
-              }
-            }
-            
-            const groupFriend: FriendResponseModel = {
-              id: conversationId,
-              name: conversationDetails.name || "Group Chat",
-              family_name: "",
-              avatar_url: conversationDetails.image || "https://via.placeholder.com/40"
-            };
-            
-            Object.defineProperty(groupFriend, 'isGroup', { value: true });
-            Object.defineProperty(groupFriend, 'groupMembers', { value: groupMembers });
-            
-            initializeConversation(conversationId);
-            fetchMessages(conversationId);
-            
-            return groupFriend;
-          } else {
-            const otherUser = members.find(detail => 
-              detail.user_id !== user.id
-            );
-            
-            if (!otherUser || !otherUser.user) {
-              return null;
-            }
-            
-            const friend: FriendResponseModel = {
-              id: otherUser.user.id,
-              name: otherUser.user.name,
-              family_name: otherUser.user.family_name,
-              avatar_url: otherUser.user.avatar_url
-            };
-            
-            initializeConversation(conversationId);
-            fetchMessages(conversationId);
-            
-            return friend;
-          }
-        }
+      if (!response.data) {
+        return null;
       }
       
-      return null;
+      const conversationDetails = Array.isArray(response.data) ? response.data : [response.data];
+      
+      const otherUser = conversationDetails.find(detail => 
+        detail.user_id !== user.id
+      );
+      
+      if (!otherUser || !otherUser.user) {
+        return null;
+      }
+      
+      const friend: FriendResponseModel = {
+        id: otherUser.user.id,
+        name: otherUser.user.name,
+        family_name: otherUser.user.family_name,
+        avatar_url: otherUser.user.avatar_url
+      };
+      
+      initializeConversation(conversationId);
+      fetchMessages(conversationId);
+      
+      return friend;
     } catch (error) {
       return null;
     } finally {
@@ -224,75 +177,76 @@ export const useMessageViewModel = () => {
     }
   }, [user, initializeConversation, fetchMessages]);
   
-  const createNewConversation = useCallback(async (userId: string, friendId: string, retryCount = 0): Promise<string | null> => {
-    try {
-      const friend = friends.find(f => f.id === friendId);
-      const friendName = friend ? `${friend.family_name || ''} ${friend.name || ''}`.trim() : 'friend';
-      const userName = user ? `${user.family_name || ''} ${user.name || ''}`.trim() : 'user';
+const createNewConversation = useCallback(async (userId: string, friendId: string, retryCount = 0): Promise<string | null> => {
+  try {
+    
+    const friend = friends.find(f => f.id === friendId);
+    const friendName = friend ? `${friend.family_name || ''} ${friend.name || ''}`.trim() : 'friend';
+    const userName = user ? `${user.family_name || ''} ${user.name || ''}`.trim() : 'user';
+    
+    let conversationName = `Chat: ${userName} - ${friendName}`;
+    if (conversationName.length > 30) {
+      const maxNameLength = 10; 
+      const truncatedUserName = userName.length > maxNameLength 
+        ? userName.substring(0, maxNameLength) + "..." 
+        : userName;
+      const truncatedFriendName = friendName.length > maxNameLength 
+        ? friendName.substring(0, maxNameLength) + "..." 
+        : friendName;
       
-      let conversationName = `Chat: ${userName} - ${friendName}`;
+      conversationName = `Chat: ${truncatedUserName} - ${truncatedFriendName}`;
+      
       if (conversationName.length > 30) {
-        const maxNameLength = 10; 
-        const truncatedUserName = userName.length > maxNameLength 
-          ? userName.substring(0, maxNameLength) + "..." 
-          : userName;
-        const truncatedFriendName = friendName.length > maxNameLength 
-          ? friendName.substring(0, maxNameLength) + "..." 
-          : friendName;
-        
-        conversationName = `Chat: ${truncatedUserName} - ${truncatedFriendName}`;
-        
-        if (conversationName.length > 30) {
-          conversationName = conversationName.substring(0, 29) + "…";
-        }
+        conversationName = conversationName.substring(0, 29) + "…";
       }
-      
-      const response = await defaultMessagesRepo.createConversation({
-        name: conversationName
-      });
-      
-      if (response.error) {
-        throw new Error(`API returned error: ${response.error.message}`);
-      }
-      
-      if (!response.data?.id) {
-        throw new Error("No conversation ID received in response");
-      }
-      
-      const conversationId = response.data.id;
-      
-      const userDetailResponse = await defaultMessagesRepo.createConversationDetail({
-        conversation_id: conversationId,
-        user_id: userId
-      });
-      
-      if (userDetailResponse.error) {
-        throw new Error(`Error adding user: ${userDetailResponse.error.message}`);
-      }
-      
-      const friendDetailResponse = await defaultMessagesRepo.createConversationDetail({
-        conversation_id: conversationId,
-        user_id: friendId
-      });
-      
-      if (friendDetailResponse.error) {
-        throw new Error(`Error adding friend: ${friendDetailResponse.error.message}`);
-      }
-      
-      return conversationId;
-    } catch (error) {
-      
-      if (retryCount < 2) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        return createNewConversation(userId, friendId, retryCount + 1);
-      }
-      
-      return null;
     }
-  }, [user, friends]);
-
+    
+    const response = await defaultMessagesRepo.createConversation({
+      name: conversationName
+    });
+    
+    if (response.error) {
+      throw new Error(`API trả về lỗi: ${response.error.message}`);
+    }
+    
+    if (!response.data?.id) {
+      throw new Error("Không nhận được ID cuộc trò chuyện từ response");
+    }
+    
+    const conversationId = response.data.id;
+    
+    const userDetailResponse = await defaultMessagesRepo.createConversationDetail({
+      conversation_id: conversationId,
+      user_id: userId
+    });
+    
+    if (userDetailResponse.error) {
+      throw new Error(`Lỗi khi thêm người dùng: ${userDetailResponse.error.message}`);
+    }
+    
+    const friendDetailResponse = await defaultMessagesRepo.createConversationDetail({
+      conversation_id: conversationId,
+      user_id: friendId
+    });
+    
+    if (friendDetailResponse.error) {
+      throw new Error(`Lỗi khi thêm bạn: ${friendDetailResponse.error.message}`);
+    }
+    
+    return conversationId;
+  } catch (error) {
+    
+    if (retryCount < 2) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      return createNewConversation(userId, friendId, retryCount + 1);
+    }
+    
+    return null;
+  }
+}, [user, friends]);
   const fetchFriends = useCallback(async (page: number) => {
     try {
+      
       const response = await defaultProfileRepo.getListFriends({
         page: page,
         limit: 20,
@@ -379,6 +333,7 @@ export const useMessageViewModel = () => {
     const success = sendMessage(message, replyToMessage);
     
     if (!success) {
+      
       defaultMessagesRepo.createMessage({
         content: message,
         conversation_id: activeConversationId,
@@ -420,13 +375,12 @@ export const useMessageViewModel = () => {
       }).catch(error => {
       });
     }
-    
     setTimeout(() => {
       updateTemporaryMessages(activeFriend.id || '');
-    }, 3000);
+    }, 5000);
     
     return true;
-  }, [activeFriend, activeConversationId, user, sendMessage, setMessages, updateTemporaryMessages, localStrings]);
+  }, [activeFriend, activeConversationId, user, sendMessage, setMessages, updateTemporaryMessages]);
 
   const forceUpdateTempMessages = useCallback(() => {
     if (activeFriend?.id) {
