@@ -44,9 +44,9 @@ export const useGroupConversationManager = () => {
         if (!conversation.id) continue;
 
         try {
-          const membersRes = await defaultMessagesRepo.getConversationDetailByID({
-            conversationId: conversation.id,
-            userId: user.id
+          // Use getConversationDetailByUserID instead of getConversationDetailByID
+          const membersRes = await defaultMessagesRepo.getConversationDetailByUserID({
+            conversation_id: conversation.id
           });
 
           if (!membersRes.data) continue;
@@ -61,6 +61,7 @@ export const useGroupConversationManager = () => {
             }
           });
         } catch (error) {
+          console.error("Error fetching conversation details:", error);
         }
       }
 
@@ -72,11 +73,13 @@ export const useGroupConversationManager = () => {
             members.push(userRes.data);
           }
         } catch (error) {
+          console.error("Error fetching user profile:", error);
         }
       }
 
       setConversationMembers(members);
     } catch (error) {
+      console.error("Error fetching conversation members:", error);
     }
   }, [user?.id]);
 
@@ -145,9 +148,9 @@ export const useGroupConversationManager = () => {
       for (const conversation of userConversations) {
         if (!conversation.id) continue;
 
-        const membersRes = await defaultMessagesRepo.getConversationDetailByID({
-          conversationId: conversation.id,
-          userId: user.id
+        // Use getConversationDetailByUserID instead of getConversationDetailByID
+        const membersRes = await defaultMessagesRepo.getConversationDetailByUserID({
+          conversation_id: conversation.id
         });
 
         if (!membersRes.data) continue;
@@ -168,6 +171,7 @@ export const useGroupConversationManager = () => {
         }
       }
     } catch (error) {
+      console.error("Error finding existing group conversation:", error);
     }
 
     return null;
@@ -224,6 +228,7 @@ export const useGroupConversationManager = () => {
 
       return conversationId;
     } catch (error) {
+      console.error("Error creating new group conversation:", error);
       return null;
     }
   };

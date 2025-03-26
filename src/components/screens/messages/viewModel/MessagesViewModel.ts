@@ -1,27 +1,26 @@
 import { UserModel } from '@/api/features/authenticate/model/LoginModel';
-import { FriendResponseModel } from '@/api/features/profile/model/FriendReponseModel';
 import { defaultProfileRepo } from '@/api/features/profile/ProfileRepository';
 import { MessageResponseModel } from '@/api/features/messages/models/MessageModel';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/context/auth/useAuth';
-import { useConversationViewModel } from './components/ConversationViewModel';
-import { defaultMessagesRepo } from '@/api/features/messages/MessagesRepo';
+import { useConversationViewModel, ConversationWithMembers } from './components/ConversationViewModel';
 import { useWebSocketConnect } from './components/WebSocketConnect';
-import { ConversationDetailResponseModel } from '@/api/features/messages/models/ConversationDetailModel';
 
 export const useMessageViewModel = () => {
   const { user, localStrings } = useAuth();
   const { getExistingConversation } = useConversationViewModel();
   
   const [newMessage, setNewMessage] = useState('');
-  const [activeFriend, setActiveFriend] = useState<FriendResponseModel | null>(null);
   const [replyTo, setReplyTo] = useState<MessageResponseModel | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
-  const [friends, setFriends] = useState<FriendResponseModel[]>([]);
   const [activeFriendProfile, setActiveFriendProfile] = useState<UserModel | null>(null); 
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [messageError, setMessageError] = useState<string | null>(null);
+  
+  // Flag to track ongoing message fetch operations
+  const isFetchingMessagesRef = useRef<Record<string, boolean>>({});
+  const fetchDebounceTimersRef = useRef<Record<string, NodeJS.Timeout>>({});
   
   const {
     messages,
@@ -32,7 +31,8 @@ export const useMessageViewModel = () => {
     initializeConversation,
     sendMessage,
     isConnected,
-    updateTemporaryMessages
+    updateTemporaryMessages,
+    fetchMessages: wsConnectFetchMessages
   } = useWebSocketConnect();
 
   useEffect(() => {
@@ -41,236 +41,57 @@ export const useMessageViewModel = () => {
     }
   }, [messages]);
 
-  useEffect(() => {
-    if (activeFriend && activeFriend.id && user?.id) {
-      setupConversationForFriend(activeFriend.id);
-    }
-  }, [activeFriend, user?.id]);
-  
-  useEffect(() => {
-    if (activeFriend?.id && !isLoadingMessages) {
-      const timerId = setTimeout(() => {
-        updateTemporaryMessages(activeFriend.id || '');
-      }, 200);
-      
-      return () => clearTimeout(timerId);
-    }
-  }, [activeFriend?.id, isLoadingMessages, updateTemporaryMessages]);
-
-  const setupConversationForFriend = async (friendId: string) => {
-    if (!user?.id) return;
-    
-    try {
-      setIsLoadingMessages(true);
-      
-      const existingConvId = await getExistingConversation(user.id, friendId);
-      
-      if (existingConvId) {
-        console.log("Đã tìm thấy cuộc trò chuyện:", existingConvId);
-        setActiveConversationId(existingConvId);
-        initializeConversation(existingConvId);
-        fetchMessages(existingConvId);
-      } else {
-        const newConversation = await createNewConversation(user.id, friendId);
-        
-        if (newConversation) {
-          setActiveConversationId(newConversation);
-          initializeConversation(newConversation);
-        } else {
-        }
-      }
-    } catch (error) {
-      console.error("Lỗi khi thiết lập cuộc trò chuyện:", error);
-    } finally {
-      setIsLoadingMessages(false);
-    }
-  };
-
+  // Debounced fetch messages to prevent excessive API calls
   const fetchMessages = useCallback(async (conversationId: string) => {
-    if (!conversationId || !activeFriend?.id) {
-      return;
+    if (!conversationId || !user?.id) {
+      console.warn("Cannot fetch messages - missing conversationId or user");
+      return Promise.resolve([]);
     }
     
-    try {
-      setIsLoadingMessages(true);
-      
-      const response = await defaultMessagesRepo.getMessagesByConversationId({
-        conversation_id: conversationId,
-        page: 1,
-        limit: 100,
-      });
-      
-      if (response.data) {
-        const fetchedMessages = Array.isArray(response.data) 
-          ? response.data as MessageResponseModel[] 
-          : [response.data as MessageResponseModel]
-        
-        const normalizedMessages = fetchedMessages.map(msg => ({
-          ...msg,
-          text: msg.content || msg.text,
-          content: msg.content || msg.text,
-          isTemporary: false 
-        }));
-        
-        const sortedMessages = normalizedMessages.sort(
-          (a, b) => new Date(a.created_at || '').getTime() - new Date(b.created_at || '').getTime()
-        );
-        
-        setMessages(prevMessages => {
-          const friendId = activeFriend.id || '';
-          
-          return {
-            ...prevMessages,
-            [friendId]: sortedMessages
-          };
-        });
-        
-        setTimeout(() => {
-        }, 500);
-      }
-    } catch (err) {
-      console.error("Lỗi khi tải tin nhắn", err);
-    } finally {
-      setIsLoadingMessages(false);
-    }
-  }, [activeFriend, setMessages]);
-
-  const findFriendByConversationId = useCallback(async (conversationId: string): Promise<FriendResponseModel | null> => {
-    if (!user?.id) return null;
-    
-    try {
-      setIsLoadingMessages(true);
-      
-      const response = await defaultMessagesRepo.getConversationDetailByUserID({ 
-        conversation_id: conversationId 
-      });
-      
-      if (!response.data) {
-        return null;
-      }
-      
-      const conversationDetails = Array.isArray(response.data) ? response.data : [response.data];
-      
-      const otherUser = conversationDetails.find(detail => 
-        detail.user_id !== user.id
-      );
-      
-      if (!otherUser || !otherUser.user) {
-        return null;
-      }
-      
-      const friend: FriendResponseModel = {
-        id: otherUser.user.id,
-        name: otherUser.user.name,
-        family_name: otherUser.user.family_name,
-        avatar_url: otherUser.user.avatar_url
-      };
-      
-      initializeConversation(conversationId);
-      fetchMessages(conversationId);
-      
-      return friend;
-    } catch (error) {
-      return null;
-    } finally {
-      setIsLoadingMessages(false);
-    }
-  }, [user, initializeConversation, fetchMessages]);
-  
-const createNewConversation = useCallback(async (userId: string, friendId: string, retryCount = 0): Promise<string | null> => {
-  try {
-    
-    const friend = friends.find(f => f.id === friendId);
-    const friendName = friend ? `${friend.family_name || ''} ${friend.name || ''}`.trim() : 'friend';
-    const userName = user ? `${user.family_name || ''} ${user.name || ''}`.trim() : 'user';
-    
-    let conversationName = `Chat: ${userName} - ${friendName}`;
-    if (conversationName.length > 30) {
-      const maxNameLength = 10; 
-      const truncatedUserName = userName.length > maxNameLength 
-        ? userName.substring(0, maxNameLength) + "..." 
-        : userName;
-      const truncatedFriendName = friendName.length > maxNameLength 
-        ? friendName.substring(0, maxNameLength) + "..." 
-        : friendName;
-      
-      conversationName = `Chat: ${truncatedUserName} - ${truncatedFriendName}`;
-      
-      if (conversationName.length > 30) {
-        conversationName = conversationName.substring(0, 29) + "…";
-      }
+    // Clear any existing debounce timer for this conversation
+    if (fetchDebounceTimersRef.current[conversationId]) {
+      clearTimeout(fetchDebounceTimersRef.current[conversationId]);
     }
     
-    const response = await defaultMessagesRepo.createConversation({
-      name: conversationName
-    });
-    
-    if (response.error) {
-      throw new Error(`API trả về lỗi: ${response.error.message}`);
-    }
-    
-    if (!response.data?.id) {
-      throw new Error("Không nhận được ID cuộc trò chuyện từ response");
-    }
-    
-    const conversationId = response.data.id;
-    
-    const userDetailResponse = await defaultMessagesRepo.createConversationDetail({
-      conversation_id: conversationId,
-      user_id: userId
-    });
-    
-    if (userDetailResponse.error) {
-      throw new Error(`Lỗi khi thêm người dùng: ${userDetailResponse.error.message}`);
-    }
-    
-    const friendDetailResponse = await defaultMessagesRepo.createConversationDetail({
-      conversation_id: conversationId,
-      user_id: friendId
-    });
-    
-    if (friendDetailResponse.error) {
-      throw new Error(`Lỗi khi thêm bạn: ${friendDetailResponse.error.message}`);
-    }
-    
-    return conversationId;
-  } catch (error) {
-    
-    if (retryCount < 2) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      return createNewConversation(userId, friendId, retryCount + 1);
-    }
-    
-    return null;
-  }
-}, [user, friends]);
-  const fetchFriends = useCallback(async (page: number) => {
-    try {
-      
-      const response = await defaultProfileRepo.getListFriends({
-        page: page,
-        limit: 20,
-        user_id: user?.id,
-      });
-
-      if (response?.data) {
-        if (Array.isArray(response?.data)) {
-          const friends = response?.data.map(
-            (friendResponse: UserModel) => ({
-              id: friendResponse.id,
-              family_name: friendResponse.family_name,
-              name: friendResponse.name,
-              avatar_url: friendResponse.avatar_url,
-            })
-          ) as UserModel[];
-          setFriends(friends);
-        } else {
-          setFriends([]);
+    // Return a promise that resolves when the fetch is complete
+    return new Promise<MessageResponseModel[]>((resolve) => {
+      // Create a new debounce timer
+      fetchDebounceTimersRef.current[conversationId] = setTimeout(async () => {
+        // Skip if we're already fetching messages for this conversation
+        if (isFetchingMessagesRef.current[conversationId]) {
+          console.log(`Already fetching messages for conversation ${conversationId}`);
+          resolve(messages[conversationId] || []);
+          return;
         }
-      }
-    } catch (error) {
-    }
-  }, [user]);
+        
+        try {
+          setIsLoadingMessages(true);
+          isFetchingMessagesRef.current[conversationId] = true;
+          
+          console.log(`Fetching messages for conversation: ${conversationId}`);
+          
+          // Use the WebSocketConnect's fetchMessages function
+          const fetchedMessages = await wsConnectFetchMessages(conversationId);
+          resolve(fetchedMessages);
+        } catch (err) {
+          console.error("Error loading messages", err);
+          resolve(messages[conversationId] || []);
+        } finally {
+          setIsLoadingMessages(false);
+          isFetchingMessagesRef.current[conversationId] = false;
+        }
+      }, 300); // 300ms debounce
+    });
+  }, [user, messages, wsConnectFetchMessages]);
+
+  useEffect(() => {
+    // Cleanup debounce timers on unmount
+    return () => {
+      Object.values(fetchDebounceTimersRef.current).forEach(timer => {
+        clearTimeout(timer);
+      });
+    };
+  }, []);
 
   const fetchUserProfile = useCallback(async (userId: string) => {
     try {
@@ -280,13 +101,14 @@ const createNewConversation = useCallback(async (userId: string, friendId: strin
         setIsProfileModalOpen(true); 
       }
     } catch (error) {
+      console.error("Error fetching user profile:", error);
     }
   }, []);
 
-  const handleSendMessage = useCallback((message: string, replyToMessage?: MessageResponseModel) => {
+  const handleSendMessage = useCallback((message: string, conversationId: string, replyToMessage?: MessageResponseModel) => {
     setMessageError(null);
 
-    if (!message.trim() || !activeFriend || !activeConversationId) {
+    if (!message.trim() || !conversationId) {
       return false;
     }
     
@@ -298,7 +120,7 @@ const createNewConversation = useCallback(async (userId: string, friendId: strin
     const tempId = `temp-${Date.now()}`;
     const tempMessage: MessageResponseModel = {
       id: tempId,
-      conversation_id: activeConversationId,
+      conversation_id: conversationId,
       user_id: user?.id || '',
       content: message,
       text: message,
@@ -314,29 +136,28 @@ const createNewConversation = useCallback(async (userId: string, friendId: strin
       }
     };
     
+    // Update messages with temp message
     setMessages(prevMessages => {
-      const friendId = activeFriend.id || '';
+      const newMessages = { ...prevMessages };
       
-      if (!prevMessages[friendId]) {
-        return {
-          ...prevMessages,
-          [friendId]: [tempMessage]
-        };
+      if (!newMessages[conversationId]) {
+        newMessages[conversationId] = [tempMessage];
+      } else {
+        newMessages[conversationId] = [...newMessages[conversationId], tempMessage];
       }
       
-      return {
-        ...prevMessages,
-        [friendId]: [...prevMessages[friendId], tempMessage]
-      };
+      return newMessages;
     });
     
-    const success = sendMessage(message, replyToMessage);
+    // Try to send via WebSocket
+    const success = sendMessage(message, conversationId, replyToMessage);
     
+    // If WebSocket fails, use API
     if (!success) {
-      
+      console.log("WebSocket send failed, using API instead");
       defaultMessagesRepo.createMessage({
         content: message,
-        conversation_id: activeConversationId,
+        conversation_id: conversationId,
         parent_id: replyToMessage?.id,
         parent_content: replyToMessage?.text || replyToMessage?.content,
         user: {
@@ -348,10 +169,10 @@ const createNewConversation = useCallback(async (userId: string, friendId: strin
       }).then(response => {
         if (response.data && response.data.id) {
           setMessages(prevMessages => {
-            const friendId = activeFriend.id || '';
-            if (!prevMessages[friendId]) return prevMessages;
+            const newMessages = { ...prevMessages };
+            if (!newMessages[conversationId]) return newMessages;
             
-            const updatedMessages = [...prevMessages[friendId]];
+            const updatedMessages = [...newMessages[conversationId]];
             const tempIndex = updatedMessages.findIndex(
               msg => msg.id === tempId
             );
@@ -366,34 +187,33 @@ const createNewConversation = useCallback(async (userId: string, friendId: strin
               };
             }
             
-            return {
-              ...prevMessages,
-              [friendId]: updatedMessages
-            };
+            newMessages[conversationId] = updatedMessages;
+            return newMessages;
           });
         }
       }).catch(error => {
+        console.error("Error sending message via API:", error);
       });
     }
+    
+    // Mark temporary messages as sent after delay
     setTimeout(() => {
-      updateTemporaryMessages(activeFriend.id || '');
+      updateTemporaryMessages(conversationId);
     }, 5000);
     
     return true;
-  }, [activeFriend, activeConversationId, user, sendMessage, setMessages, updateTemporaryMessages]);
+  }, [user, sendMessage, setMessages, updateTemporaryMessages, localStrings.Messages.MessageTooLong]);
 
   const forceUpdateTempMessages = useCallback(() => {
-    if (activeFriend?.id) {
-      updateTemporaryMessages(activeFriend.id);
+    if (activeConversationId) {
+      updateTemporaryMessages(activeConversationId);
     }
-  }, [activeFriend, updateTemporaryMessages]);
+  }, [activeConversationId, updateTemporaryMessages]);
 
   return {
     fetchMessages,
     newMessage,
     setNewMessage,
-    activeFriend,
-    setActiveFriend,
     messages,
     setMessages,
     messageError,
@@ -401,8 +221,6 @@ const createNewConversation = useCallback(async (userId: string, friendId: strin
     replyTo,
     setReplyTo,
     messagesEndRef,
-    fetchFriends,
-    friends,
     fetchUserProfile, 
     activeFriendProfile, 
     isProfileModalOpen, 
@@ -414,6 +232,6 @@ const createNewConversation = useCallback(async (userId: string, friendId: strin
     isConnected,
     isLoadingMessages,
     forceUpdateTempMessages,
-    findFriendByConversationId
+    initializeConversation
   };
 };

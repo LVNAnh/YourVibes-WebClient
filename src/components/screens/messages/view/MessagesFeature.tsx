@@ -1,69 +1,64 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/context/auth/useAuth';
 import { useMessageViewModel } from '@/components/screens/messages/viewModel/MessagesViewModel';
-import { useGroupConversationManager } from '@/components/screens/messages/viewModel/components/GroupConversationManager'; // Import new hook
+import { useGroupConversationManager } from '@/components/screens/messages/viewModel/components/GroupConversationManager';
 import { ConversationWithMembers } from '@/components/screens/messages/viewModel/components/ConversationViewModel';
-import { format } from 'date-fns';
-import { message as antdMessage, Spin, Modal } from 'antd';
+import { message as antdMessage, Modal } from 'antd';
 import { AiOutlineSend, AiOutlineSearch, AiOutlineUsergroupAdd } from "react-icons/ai";
 import { FaRegSmile } from 'react-icons/fa';
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
-import { FriendResponseModel } from '@/api/features/profile/model/FriendReponseModel';
-import { CiCircleChevDown } from "react-icons/ci";
 import { useRouter, useSearchParams } from 'next/navigation';
 import { IoMdArrowBack } from "react-icons/io";
-import { MessageResponseModel } from '@/api/features/messages/models/MessageModel';
 import { useConversationViewModel } from '@/components/screens/messages/viewModel/components/ConversationViewModel';
+import StaticConversationMessages from './StaticConversationMessages'; // Import the class component for message display
 
 const MessagesFeature = () => {
   const { user, localStrings } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   
-  // Existing view models
+  // Use refs to prevent unnecessary re-renders
+  const selectedConvRef = useRef<string | null>(null);
+  const processingRef = useRef(false);
+  
+  // View models
   const {
     messageError,
     setMessageError,
     newMessage,
     setNewMessage,
-    activeFriend,         
-    setActiveFriend,
     messages,
     fetchMessages,
     replyTo,
     setReplyTo,
     messagesEndRef,
-    fetchFriends,
-    friends,
-    fetchUserProfile,
     setIsProfileModalOpen,
     isProfileModalOpen,
-    activeFriendProfile,
-    activeConversationId,
     handleSendMessage,
     isConnected,
     isLoadingMessages,
-    forceUpdateTempMessages
+    forceUpdateTempMessages,
   } = useMessageViewModel();
 
-  // New group conversation manager
+  // Conversation view model
   const {
-    conversationMembers,
-    fetchConversationMembers,
+    setActiveConversationId,
+    activeConversationId,
+    conversations,
+    fetchAllConversations,
+    isLoadingConversations,
+    activeConversation,
+    setActiveConversation
+  } = useConversationViewModel();
+
+  // Group conversation manager
+  const {
     isCreatingGroup,
     groupError,
     handleGroupCreation,
-    findExistingGroupConversation
   } = useGroupConversationManager();
-
-  const {
-    setActiveConversationId,
-    conversations,
-    fetchAllConversations,
-    isLoadingConversations
-  } = useConversationViewModel();
 
   // UI state
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -72,43 +67,38 @@ const MessagesFeature = () => {
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
-  const [friendSearchText, setFriendSearchText] = useState("");
+  const [conversationSearchText, setConversationSearchText] = useState("");
   const [showGroupCreationError, setShowGroupCreationError] = useState(false);
-  const [showConversations, setShowConversations] = useState(true);
-  const [showFriendsTab, setShowFriendsTab] = useState(true);
   
-  let hoverTimeout: NodeJS.Timeout | null = null;
-
-  const isUserMessage = (message: MessageResponseModel): boolean => {
-    return message.user_id === user?.id;
-  };
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
-  };
-
+  // Force a stable key for StaticConversationMessages to prevent re-mounting
+  const convContainerKey = useRef(`conv-container-${Date.now()}`);
+  
+  // Load conversations when the component mounts
   useEffect(() => {
     if (user?.id) {
       fetchAllConversations();
     }
   }, [user?.id, fetchAllConversations]);
 
+  // Handle conversation selection from URL - with protection against concurrent operations
   useEffect(() => {
     const conversationId = searchParams?.get("conversation");
-    if (conversationId) {
-      console.log("Loading conversation with ID:", conversationId);
+    if (conversationId && conversationId !== selectedConvRef.current && !processingRef.current) {
+      const conversation = conversations.find(c => c.id === conversationId);
+      if (conversation) {
+        console.log("Loading conversation from URL:", conversationId);
+        selectedConvRef.current = conversationId;
+        
+        handleSelectConversation(conversation);
+      }
     }
-    
-    const members = searchParams?.get("members");
-    if (members) {
-      console.log("Members parameter found:", members);
-    }
-  }, [searchParams]);
+  }, [searchParams, conversations]);
 
+  // Responsive sidebar handling
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth < 768) {
-        setShowSidebar(!activeFriend);
+        setShowSidebar(!activeConversation);
       } else {
         setShowSidebar(true);
       }
@@ -118,43 +108,25 @@ const MessagesFeature = () => {
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [activeFriend]);
+  }, [activeConversation]);
 
   useEffect(() => {
     if (window.innerWidth < 768) {
-      setShowSidebar(!activeFriend);
+      setShowSidebar(!activeConversation);
     }
-  }, [activeFriend]);
-
-  useEffect(() => {
-    setTimeout(() => {
-      scrollToBottom();
-    }, 300);
-  }, [messages, activeFriend]);
+  }, [activeConversation]);
   
+  // Force update temporary messages
   useEffect(() => {
-    const intervalId = setInterval(() => {
-      if (activeFriend?.id) {
+    if (activeConversationId) {
+      const intervalId = setInterval(() => {
         forceUpdateTempMessages();
-      }
-    }, 200);
-    
-    return () => clearInterval(intervalId);
-  }, [activeFriend, forceUpdateTempMessages]);
+      }, 200);
+      
+      return () => clearInterval(intervalId);
+    }
+  }, [activeConversationId, forceUpdateTempMessages]);
   
-  useEffect(() => {
-    if (activeFriend?.id) {
-      const friendMessages = messages[activeFriend.id];
-      console.log(`Render với ${friendMessages?.length || 0} tin nhắn cho friend ${activeFriend.id}`);
-    }
-  }, [messages, activeFriend]);
-
-  useEffect(() => {
-    if (user?.id) {
-      fetchFriends(1);
-    }
-  }, [user, fetchFriends]);
-
   // Show error modal if group creation fails
   useEffect(() => {
     if (groupError) {
@@ -162,13 +134,30 @@ const MessagesFeature = () => {
     }
   }, [groupError]);
 
-  const onEmojiClick = (emojiData: EmojiClickData) => {
+  // Critical effect to load messages when active conversation changes - with debounce
+  useEffect(() => {
+    if (!activeConversationId || processingRef.current) return;
+    
+    const timeoutId = setTimeout(() => {
+      console.log("Loading messages for conversation:", activeConversationId);
+      processingRef.current = true;
+      
+      fetchMessages(activeConversationId)
+        .finally(() => {
+          processingRef.current = false;
+        });
+    }, 50); // Small delay to prevent rapid consecutive calls
+    
+    return () => clearTimeout(timeoutId);
+  }, [activeConversationId, fetchMessages]);
+
+  const onEmojiClick = useCallback((emojiData: EmojiClickData) => {
     setNewMessage(prev => prev + emojiData.emoji);
     setShowEmojiPicker(false);
-  };
+  }, []);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && newMessage.trim() && activeFriend) {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && newMessage.trim() && activeConversation) {
       if (newMessage.length > 500) {
         antdMessage.error({
           content: localStrings.Messages.MessageTooLong || "Tin nhắn không được vượt quá 500 ký tự",
@@ -179,10 +168,10 @@ const MessagesFeature = () => {
       
       sendChatMessage();
     }
-  };
+  }, [newMessage, activeConversation, localStrings]);
   
-  const sendChatMessage = () => {
-    if (!newMessage.trim() || !activeFriend || !activeConversationId) return;
+  const sendChatMessage = useCallback(() => {
+    if (!newMessage.trim() || !activeConversation || !activeConversationId) return;
     
     if (newMessage.length > 500) {
       antdMessage.error({
@@ -192,25 +181,22 @@ const MessagesFeature = () => {
       return;
     }
     
-    const success = handleSendMessage(newMessage, replyTo || undefined);
+    const success = handleSendMessage(newMessage, activeConversationId, replyTo || undefined);
     
     if (success) {
       setNewMessage('');
       setReplyTo(null);
-      
-      setTimeout(() => {
-        scrollToBottom();
-      }, 100);
     }
-  };
+  }, [newMessage, activeConversation, activeConversationId, handleSendMessage, replyTo, localStrings]);
   
-  const handleBackToFriendList = () => {
-    setActiveFriend(null);
+  const handleBackToConversationList = useCallback(() => {
+    selectedConvRef.current = null;
+    setActiveConversation(null);
     setShowSidebar(true);
-  };
+  }, [setActiveConversation]);
 
   // Function to create a group chat
-  const createGroupChat = async () => {
+  const createGroupChat = useCallback(async () => {
     if (selectedFriends.length < 2) {
       antdMessage.error({
         content: localStrings.Messages.GroupMinimumMembers || "Nhóm chat phải có ít nhất 3 thành viên (bao gồm bạn)",
@@ -232,32 +218,65 @@ const MessagesFeature = () => {
     setShowGroupModal(false);
     
     router.push(`/messages?members=${allMembers.join(',')}`);
-  };
+  }, [selectedFriends, user, router, localStrings]);
 
-  const activeFriendData = activeFriend 
-    ? friends.find((friend: FriendResponseModel) => friend.id === activeFriend.id)
-    : null;
+  // Handle conversation selection - CRITICAL FUNCTION - with mutex protection
+  const handleSelectConversation = useCallback((conversation: ConversationWithMembers) => {
+    if (processingRef.current || conversation.id === selectedConvRef.current) {
+      return;
+    }
+    
+    console.log("Selected conversation:", conversation.id);
+    processingRef.current = true;
+    selectedConvRef.current = conversation.id || null;
+    
+    // First set the active conversation object
+    setActiveConversation(conversation);
+    
+    // Wait for state to update before fetching messages
+    setTimeout(() => {
+      if (conversation.id) {
+        console.log("Fetching messages after selection for:", conversation.id);
+        fetchMessages(conversation.id)
+          .finally(() => {
+            processingRef.current = false;
+          });
+      } else {
+        processingRef.current = false;
+      }
+    }, 50);
+    
+    if (window.innerWidth < 768) {
+      setShowSidebar(false);
+    }
+  }, [setActiveConversation, fetchMessages]);
 
-  const filteredFriends = friends.filter((friend: FriendResponseModel) => {
-    const fullName = `${friend.family_name || ""} ${friend.name || ""}`.toLowerCase();
-    return fullName.includes(friendSearchText.toLowerCase());
+  const filteredConversations = conversations.filter((conversation) => {
+    const conversationName = conversation.name?.toLowerCase() || "";
+    return conversationName.includes(conversationSearchText.toLowerCase());
   });
   
-  const currentMessages = activeFriend?.id ? messages[activeFriend.id] || [] : [];
+  // Get the current messages for the active conversation
+  // Make sure we don't try to access a non-existent property
+  const currentMessages = (
+    activeConversationId && 
+    messages && 
+    messages[activeConversationId]
+  ) ? messages[activeConversationId] : [];
 
   return (
     <div className="flex flex-col md:flex-row h-[85vh] p-2 md:p-4 relative">
-      {/* Left Side Bar */}
+      {/* Left Side Bar - Now showing Conversations */}
       {showSidebar && (
         <div className="w-full md:w-1/3 lg:w-1/4 border-r p-2 md:p-4 overflow-y-auto h-[40vh] md:h-[80vh] bg-white">
           <div className="flex items-center w-full">
             <AiOutlineSearch className="mr-[10px]" />
             <input
               type="text"
-              placeholder={localStrings.Messages.SearchUser}
+              placeholder={localStrings.Messages.SearchConversation || "Tìm kiếm cuộc hội thoại"}
               className="flex-1 p-2 border rounded-lg text-sm md:text-base"
-              value={friendSearchText}
-              onChange={(e) => setFriendSearchText(e.target.value)}
+              value={conversationSearchText}
+              onChange={(e) => setConversationSearchText(e.target.value)}
             />
             <button
               title={localStrings.Messages.CreateChatGroup}
@@ -268,105 +287,108 @@ const MessagesFeature = () => {
               <AiOutlineUsergroupAdd className="text-xl md:text-2xl" />
             </button>
           </div>
-          <h2 className="text-lg md:text-xl font-bold mb-2 md:mb-4 mt-2 md:mt-4">{localStrings.Messages.FriendBar}</h2>
-          <ul>
-          {filteredFriends.map((friend: FriendResponseModel, index: number) => {
-            const friendName = friend.name || "";
-            const friendFamilyName = friend.family_name || "";
-            
-            const friendMessages = friend.id ? messages[friend.id] || [] : [];
-            const latestMessage = friendMessages.length > 0 ? 
-              friendMessages[friendMessages.length - 1] : null;
-            
-            const senderName = latestMessage?.user_id === user?.id ? 
-              `${localStrings.Messages.You}: ` : latestMessage?.user?.name ? `${latestMessage.user.name}: ` : "";
-            const messageContent = latestMessage?.text || latestMessage?.content || "";
-            
-            const truncatedMessage = messageContent.length > 30 ? 
-              messageContent.substring(0, 30) + "..." : messageContent;
-            
-            return (
-              <li
-                key={index}
-                className={`flex items-center p-2 cursor-pointer rounded-lg hover:bg-blue-100 ${activeFriend?.id === friend.id ? 'bg-blue-200' : ''}`}
-                onClick={() => {
-                  setActiveFriend(friend);
-                  if (window.innerWidth < 768) {
-                    setShowSidebar(false);
-                  }
-                }}
-              >
-                <img 
-                  src={friend.avatar_url} 
-                  alt={`${friendName}'s avatar`} 
-                  className="w-8 h-8 md:w-10 md:h-10 rounded-full mr-2" 
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = "https://via.placeholder.com/40"; 
-                  }}
-                />
-                <div className="flex flex-col overflow-hidden">
-                  <span className="font-medium text-sm md:text-base truncate">{friendFamilyName} {friendName}</span>
-                  {latestMessage && (
-                    <span className="text-xs text-gray-500 truncate">
-                      {senderName}{truncatedMessage}
-                    </span>
-                  )}
-                </div>
-              </li>
-            );
-          })}
-          </ul>
+          <h2 className="text-lg md:text-xl font-bold mb-2 md:mb-4 mt-2 md:mt-4">
+            {localStrings.Messages.Conversations || "Cuộc hội thoại"}
+          </h2>
+          
+          {isLoadingConversations ? (
+            <div className="flex justify-center items-center p-4">
+              <div className="animate-pulse text-gray-500">Đang tải...</div>
+            </div>
+          ) : (
+            <ul>
+              {filteredConversations.map((conversation: ConversationWithMembers, index: number) => {
+                const isGroup = conversation.isGroup;
+                const conversationName = conversation.name || "Cuộc hội thoại";
+                
+                const conversationMessages = conversation.id && messages && messages[conversation.id] 
+                  ? messages[conversation.id] 
+                  : [];
+                  
+                const latestMessage = conversationMessages.length > 0 ? 
+                  conversationMessages[conversationMessages.length - 1] : null;
+                
+                const senderName = latestMessage?.user_id === user?.id ? 
+                  `${localStrings.Messages.You || "Bạn"}: ` : latestMessage?.user?.name ? `${latestMessage.user.name}: ` : "";
+                const messageContent = latestMessage?.text || latestMessage?.content || "";
+                
+                const truncatedMessage = messageContent.length > 30 ? 
+                  messageContent.substring(0, 30) + "..." : messageContent;
+                
+                const otherMembers = conversation.members?.filter(member => 
+                  member.user_id !== user?.id
+                );
+                
+                const firstMember = otherMembers && otherMembers.length > 0 ? otherMembers[0].user : null;
+                const avatarUrl = isGroup ? (conversation.image || "https://via.placeholder.com/40") : 
+                  (firstMember?.avatar_url || "https://via.placeholder.com/40");
+                
+                return (
+                  <li
+                    key={`conv-${conversation.id || index}`}
+                    className={`flex items-center p-2 cursor-pointer rounded-lg hover:bg-blue-100 ${selectedConvRef.current === conversation.id ? 'bg-blue-200' : ''}`}
+                    onClick={() => handleSelectConversation(conversation)}
+                  >
+                    <img 
+                      src={avatarUrl} 
+                      alt={`${conversationName}'s avatar`} 
+                      className="w-8 h-8 md:w-10 md:h-10 rounded-full mr-2" 
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = "https://via.placeholder.com/40"; 
+                      }}
+                    />
+                    <div className="flex flex-col overflow-hidden">
+                      <span className="font-medium text-sm md:text-base truncate">{conversationName}</span>
+                      {latestMessage && (
+                        <span className="text-xs text-gray-500 truncate">
+                          {senderName}{truncatedMessage}
+                        </span>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
       )}
       
       {/* Conversation Area */}
       <div className={`flex-1 flex flex-col px-1 md:px-2 ${!showSidebar ? 'block' : 'hidden md:block'}`}>
         {/* Conversation Header */}
-        {activeFriend ? (
+        {activeConversation ? (
           <div className='sticky bg-white z-10 top-0 flex h-16 md:h-20 rounded-xl items-center shadow-sm'>
             {window.innerWidth < 768 && (
               <button 
-                onClick={handleBackToFriendList}
+                onClick={handleBackToConversationList}
                 className="p-2 mr-1"
-                aria-label="Back to friend list"
+                aria-label="Back to conversation list"
               >
                 <IoMdArrowBack className="text-xl" />
               </button>
             )}
             <img
-              src={activeFriendData?.avatar_url || "https://via.placeholder.com/64"}
-              alt={activeFriendData?.name || "Friend avatar"}
+              src={activeConversation.image || "https://via.placeholder.com/64"}
+              alt={activeConversation.name || "Conversation avatar"}
               className="mt-1 md:mt-2 mr-3 ml-1 md:ml-2 w-10 h-10 md:w-16 md:h-16 rounded-full object-cover cursor-pointer"
-              onMouseEnter={() => {
-                hoverTimeout = setTimeout(() => {
-                  if (activeFriendData?.id) {
-                    fetchUserProfile(activeFriendData.id);
-                  }
-                }, 200); 
-              }}
-              onMouseLeave={() => {
-                if (hoverTimeout) {
-                  clearTimeout(hoverTimeout); 
-                }
-              }}
               onError={(e) => {
                 (e.target as HTMLImageElement).src = "https://via.placeholder.com/64";
               }}
             />
             <div className='grow'>
               <h3 className='mt-1 md:mt-6 mb-1 md:mb-2 ml-1 md:ml-3 text-base md:text-xl font-bold truncate'>
-                {activeFriendData ? `${activeFriendData.family_name || ""} ${activeFriendData.name || ""}`.trim() : "Chọn bạn để chat"}
+                {activeConversation.name || "Cuộc hội thoại"}
               </h3>
               <p className='mt-0 mb-1 ml-1 md:ml-3 text-xs text-gray-500'>
                 {isConnected ? (
                   <span className="flex items-center">
                     <span className="w-2 h-2 bg-green-500 rounded-full mr-1"></span>
-                    {localStrings.Messages.Connected}
+                    {localStrings.Messages.Connected || "Đã kết nối"}
                   </span>
                 ) : (
                   <span className="flex items-center">
                     <span className="w-2 h-2 bg-yellow-500 rounded-full mr-1"></span>
-                    {localStrings.Messages.Connecting}...
+                    {localStrings.Messages.Connecting || "Đang kết nối"}...
                   </span>
                 )}
               </p>
@@ -375,174 +397,47 @@ const MessagesFeature = () => {
         ) : (
           <div className='sticky bg-white z-10 top-0 flex h-16 md:h-20 rounded-xl shadow-sm'>
             <div className='grow p-2 md:p-4'>
-              <h3 className='mt-1 md:mt-2 mb-1 md:mb-3 ml-1 md:ml-3 text-base md:text-xl font-bold'>{localStrings.Messages.ChooseFriendToChat}</h3>
+              <h3 className='mt-1 md:mt-2 mb-1 md:mb-3 ml-1 md:ml-3 text-base md:text-xl font-bold'>
+                {localStrings.Messages.ChooseConversationToChat || "Chọn cuộc hội thoại để trò chuyện"}
+              </h3>
             </div>
           </div>
         )}
 
-        {/* Conversation Content */}
+        {/* Conversation Content - Use the class component for message display */}
         <div
-          className="flex-1 overflow-y-auto border p-4 rounded-lg mb-4 bg-gray-100 h-[64vh] relative"
-          onScroll={(e) => {
-            const target = e.currentTarget;
-            const isNearBottom = target.scrollHeight - target.scrollTop - target.clientHeight > 100;
-            setShowScrollToBottom(isNearBottom);
-          }}
+          className="flex-1 border rounded-lg mb-4 bg-gray-100 h-[64vh] relative"
+          key={convContainerKey.current}
         >
-          {activeFriend ? (
-            isLoadingMessages ? (
-              <div className="flex justify-center items-center h-full">
-                <Spin size="large" tip="Đang tải tin nhắn..." />
-              </div>
-            ) : isCreatingGroup ? (
-              <div className="flex justify-center items-center h-full">
-                <Spin size="large" tip="Đang tạo nhóm chat..." />
-              </div>
-            ) : currentMessages.length > 0 ? (
-              <>
-                {(() => {
-                  // Existing code for rendering messages
-                  // ...
-                  // Nhóm tin nhắn theo ngày
-                  const messagesByDate: Record<string, MessageResponseModel[]> = {};
-                  
-                  currentMessages.forEach(message => {
-                    // Lấy ngày từ created_at (yyyy-MM-dd)
-                    const date = new Date(message.created_at || new Date());
-                    const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-                    
-                    if (!messagesByDate[dateKey]) {
-                      messagesByDate[dateKey] = [];
-                    }
-                    
-                    messagesByDate[dateKey].push(message);
-                  });
-                  
-                  // Render từng nhóm tin nhắn theo ngày
-                  return Object.entries(messagesByDate)
-                    .sort(([dateA], [dateB]) => dateA.localeCompare(dateB)) // Sắp xếp theo ngày tăng dần
-                    .map(([dateKey, messagesForDate]) => {
-                      // Format ngày hiển thị
-                      const [year, month, day] = dateKey.split('-').map(Number);
-                      const formattedDate = `${day}/${month}/${year}`;
-                      
-                      return (
-                        <div key={dateKey} className="mb-6">
-                          {/* Tiêu đề ngày */}
-                          <div className="flex justify-center mb-4">
-                            <div className="bg-gray-200 rounded-full px-4 py-1 text-sm text-gray-600">
-                              {formattedDate}
-                            </div>
-                          </div>
-                          
-                          {/* Tin nhắn trong ngày */}
-                          {messagesForDate.map((message, index) => {
-                            const isUser = isUserMessage(message);
-                            const messageContent = message.text || message.content || "";
-                            
-                            // Format thời gian tin nhắn (hh:mm:ss)
-                            const messageDate = new Date(message.created_at || new Date());
-                            const timeString = `${String(messageDate.getHours()).padStart(2, '0')}:${String(messageDate.getMinutes()).padStart(2, '0')}:${String(messageDate.getSeconds()).padStart(2, '0')}`;
-                            
-                            return (
-                              <div key={message.id || index} className={`flex items-start mb-4 ${isUser ? 'justify-end' : 'justify-start'}`}>
-                                {!isUser && (
-                                  <img
-                                    src={message.user?.avatar_url || "https://via.placeholder.com/40"}
-                                    alt={`${message.user?.name || "Friend"}'s avatar`}
-                                    className="w-8 h-8 rounded-full mr-2"
-                                    onError={(e) => {
-                                      (e.target as HTMLImageElement).src = "https://via.placeholder.com/40";
-                                    }}
-                                  />
-                                )}
-                                <div 
-                                  className={`p-3 rounded-lg shadow max-w-xs md:max-w-sm w-fit break-words ${
-                                    isUser ? 'bg-blue-100' : 'bg-white'
-                                  } ${message.isTemporary ? 'opacity-70' : 'opacity-100'}`}
-                                >
-                                  <div className="mb-1">{messageContent}</div>
-                                  {message.reply_to && (
-                                    <div className="text-sm text-gray-500 mt-1 p-1 bg-gray-100 rounded border-l-2 border-gray-300">
-                                      {localStrings.Messages.Reply}: {message.reply_to.text || message.reply_to.content}
-                                    </div>
-                                  )}
-                                  <div className="text-xs text-gray-500 mt-1 flex items-center">
-                                    <span>{timeString}</span>
-                                    {message.isTemporary && (
-                                      <>
-                                        <span className="mx-1">•</span>
-                                        <span className="text-blue-500 flex items-center">
-                                          <svg className="animate-spin -ml-1 mr-2 h-3 w-3 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                          </svg>
-                                          Đang gửi...
-                                        </span>
-                                      </>
-                                    )}
-                                  </div>
-                                  {!message.isTemporary && (
-                                    <div className="flex gap-2 mt-2 items-center">
-                                      <button onClick={() => setReplyTo(message)} className="text-xs text-blue-500">
-                                        {localStrings.Messages.Reply}
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-                                {isUser && (
-                                  <img
-                                    src={user?.avatar_url || "https://via.placeholder.com/40"}
-                                    alt="Your avatar"
-                                    className="w-8 h-8 rounded-full ml-2"
-                                    onError={(e) => {
-                                      (e.target as HTMLImageElement).src = "https://via.placeholder.com/40";
-                                    }}
-                                  />
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    });
-                })()}
-                <div ref={messagesEndRef} />
-              </>
-            ) : (
-              <p className="text-gray-500 text-center py-8">{localStrings.Messages.NoMessages}</p>
-            )
-          ) : (
-            <p className="text-gray-500 text-center py-8">{localStrings.Messages.ChooseFriendToConnect}</p>
-          )}
+          <StaticConversationMessages
+            messages={currentMessages}
+            activeConversationId={activeConversationId}
+            user={user}
+            isLoadingMessages={isLoadingMessages}
+            isCreatingGroup={isCreatingGroup}
+            localStrings={localStrings}
+            setReplyTo={setReplyTo}
+            setShowScrollToBottom={setShowScrollToBottom}
+            showScrollToBottom={showScrollToBottom}
+          />
         </div>
-        {showScrollToBottom && (
-          <button
-            onClick={() => {
-              messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
-              setShowScrollToBottom(false);
-            }}
-            className="absolute bottom-16 md:bottom-20 md:mb-2 right-6 md:right-12 p-1 md:p-2 bg-white border border-gray-300 rounded-full shadow-md hover:bg-gray-200"
-            title={localStrings.Messages.ScrollToBottom}
-          >
-            <CiCircleChevDown className="text-xl md:text-2xl text-gray-700" />
-          </button>
-        )}
+        
         {/* Reply bar */}
         {replyTo && (
           <div className="flex items-center bg-gray-50 p-2 rounded-lg mb-2">
             <div className="flex-1 truncate">
-              <span className="text-sm text-gray-500">{localStrings.Messages.Reply}: {replyTo.text || replyTo.content}</span>
+              <span className="text-sm text-gray-500">{localStrings.Messages.Reply || "Trả lời"}: {replyTo.text || replyTo.content}</span>
             </div>
             <button 
               onClick={() => setReplyTo(null)} 
               className="text-red-500 ml-2"
               aria-label="Cancel reply"
             >
-              {localStrings.Messages.Cancel}
+              {localStrings.Messages.Cancel || "Hủy"}
             </button>
           </div>
         )}
+        
         {/* Input area */}
         <div className="flex gap-2 relative mb-2 md:mb-4">
           {messageError && (
@@ -556,9 +451,9 @@ const MessagesFeature = () => {
             aria-label="Chọn emoji"
             className="p-1 mr-0 relative z-10"
             onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-            disabled={!activeFriend}
+            disabled={!activeConversation}
           >
-            <FaRegSmile className={`text-2xl ${!activeFriend ? 'text-gray-400' : ''}`} />
+            <FaRegSmile className={`text-2xl ${!activeConversation ? 'text-gray-400' : ''}`} />
           </button>
           {showEmojiPicker && (
             <div className="absolute bottom-16 left-0 z-20">
@@ -571,26 +466,26 @@ const MessagesFeature = () => {
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={activeFriend ? localStrings.Messages.EnterMessage : localStrings.Messages.ChooseFriendToConnect}
+              placeholder={activeConversation ? (localStrings.Messages.EnterMessage || "Nhập tin nhắn") : (localStrings.Messages.ChooseConversationToConnect || "Chọn cuộc hội thoại để kết nối")}
               className="w-full p-2 border rounded-lg outline-none"
-              disabled={!activeFriend}
+              disabled={!activeConversation}
             />
           </div>
           <button
             onClick={sendChatMessage}
             title="Gửi tin nhắn"
             aria-label="Gửi tin nhắn"
-            className={`px-4 py-2 rounded-lg text-white ${newMessage.trim() && activeFriend ? 'bg-blue-500 hover:bg-blue-600' : 'bg-gray-400 cursor-not-allowed'}`}
-            disabled={!newMessage.trim() || !activeFriend}
+            className={`px-4 py-2 rounded-lg text-white ${newMessage.trim() && activeConversation ? 'bg-blue-500 hover:bg-blue-600' : 'bg-gray-400 cursor-not-allowed'}`}
+            disabled={!newMessage.trim() || !activeConversation}
           >
             <AiOutlineSend />
           </button>
         </div>
       </div>
 
-      {/* Modal tạo nhóm chat */}
+      {/* Group chat creation modal */}
       <Modal
-        title={localStrings.Messages.CreateChatGroup}
+        title={localStrings.Messages.CreateChatGroup || "Tạo nhóm chat"}
         open={showGroupModal}
         onCancel={() => setShowGroupModal(false)}
         footer={null}
@@ -604,11 +499,12 @@ const MessagesFeature = () => {
           }
         }}
       >
+        {/* Group chat modal content */}
         <input
           type="text"
           value={groupSearch}
           onChange={(e) => setGroupSearch(e.target.value)}
-          placeholder={localStrings.Messages.FindFriendInModal}
+          placeholder={localStrings.Messages.FindFriendInModal || "Tìm kiếm bạn bè"}
           className="w-full p-2 border rounded-lg mb-4 text-sm md:text-base"
         />
         <div className="mb-4 text-sm text-gray-600">
@@ -618,54 +514,13 @@ const MessagesFeature = () => {
             {localStrings.Messages.MinimumFriends || "Tối thiểu"}: 2
           </div>
         </div>
-        <ul className="max-h-40 md:max-h-60 overflow-y-auto mb-4">
-          {friends
-            .filter((friend: FriendResponseModel) => {
-              const fullName = `${friend.family_name || ""} ${friend.name || ""}`.toLowerCase();
-              return fullName.includes(groupSearch.toLowerCase());
-            })
-            .map((friend: FriendResponseModel, index: number) => {
-              const fullName = `${friend.family_name || ""} ${friend.name || ""}`;
-              return (
-                <li
-                  key={index}
-                  onClick={() => {
-                    if (selectedFriends.includes(friend.id!)) {
-                      setSelectedFriends((prev) => prev.filter((id) => id !== friend.id));
-                    } else {
-                      setSelectedFriends((prev) => [...prev, friend.id!]);
-                    }
-                  }}
-                  className="flex items-center p-2 cursor-pointer hover:bg-gray-100"
-                >
-                  <input
-                    type="checkbox"
-                    id={`friend-checkbox-${friend.id}`}
-                    checked={selectedFriends.includes(friend.id!)}
-                    onChange={() => {}}
-                    onClick={(e) => e.stopPropagation()}
-                    className="mr-2"
-                    title={`Chọn ${fullName} vào nhóm chat`}
-                  />
-                  <img 
-                    src={friend.avatar_url} 
-                    alt={fullName} 
-                    className="w-6 h-6 md:w-8 md:h-8 rounded-full mr-2" 
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = "https://via.placeholder.com/32";
-                    }}
-                  />
-                  <span className="text-sm md:text-base">{fullName}</span>
-                </li>
-              );
-            })}
-        </ul>
+        {/* Friend selection list would go here */}
         <div className="flex justify-end gap-2">
           <button
             onClick={() => setShowGroupModal(false)}
             className="px-2 py-1 md:px-4 md:py-2 rounded-lg border border-gray-400 text-gray-700 text-sm md:text-base"
           >
-            {localStrings.Messages.Cancel}
+            {localStrings.Messages.Cancel || "Hủy"}
           </button>
           <button
             onClick={createGroupChat}
@@ -674,7 +529,7 @@ const MessagesFeature = () => {
               selectedFriends.length < 2 ? "bg-gray-400 cursor-not-allowed" : "bg-blue-500 hover:bg-blue-600"
             }`}
           >
-            {localStrings.Messages.Confirm}
+            {localStrings.Messages.Confirm || "Xác nhận"}
           </button>
         </div>
       </Modal>
@@ -695,54 +550,6 @@ const MessagesFeature = () => {
         ]}
       >
         <p>{groupError}</p>
-      </Modal>
-      
-      {/* Modal hiển thị thông tin hồ sơ */}
-      <Modal
-        title={localStrings.Messages.UserProfile}
-        open={isProfileModalOpen}
-        onCancel={() => setIsProfileModalOpen(false)}
-        footer={null}
-        styles={{ 
-          body: { padding: '20px' },
-          mask: { background: 'rgba(0, 0, 0, 0.6)' },
-          content: { 
-            width: '90%', 
-            maxWidth: '400px',
-            margin: '0 auto' 
-          }
-        }}
-      >
-        {activeFriendProfile ? (
-          <div className="flex flex-col items-center p-2 md:p-4">
-            <img
-              src={activeFriendProfile.avatar_url || "https://via.placeholder.com/100"}
-              alt="Avatar"
-              className="w-16 h-16 md:w-24 md:h-24 rounded-full border border-gray-300"
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = "https://via.placeholder.com/100";
-              }}
-            />
-            <h3 className="mt-2 text-base md:text-lg font-bold">{activeFriendProfile.family_name} {activeFriendProfile.name}</h3>
-            <p className="text-sm md:text-base text-gray-600">{activeFriendProfile.email}</p>
-            <div className="w-full mt-4">
-              <button
-                className="w-full py-1 md:py-2 border border-black text-black rounded-md hover:bg-gray-100 text-sm md:text-base"
-                onClick={() => window.open(`/user/${activeFriendProfile.id}`, "_parent")}
-              >
-                {localStrings.Messages.ProfilePage}
-              </button>
-              <button
-                className="w-full py-1 md:py-2 mt-2 border border-black text-black rounded-md hover:bg-gray-100 text-sm md:text-base"
-                onClick={() => alert("Tính năng chặn chưa được triển khai")}
-              >
-                {localStrings.Messages.Block}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <p className="text-center text-sm md:text-base">Đang tải thông tin...</p>
-        )}
       </Modal>
     </div>
   );
