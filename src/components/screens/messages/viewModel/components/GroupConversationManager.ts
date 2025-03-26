@@ -6,22 +6,6 @@ import { defaultProfileRepo } from "@/api/features/profile/ProfileRepository";
 import { useAuth } from "@/context/auth/useAuth";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useState, useEffect, useCallback } from "react";
-import { useMessageViewModel } from "../MessagesViewModel";
-
-export interface GroupMember {
-  id: string;
-  name?: string;
-  family_name?: string;
-  avatar_url?: string;
-}
-
-export interface GroupChatInfo {
-  id: string;
-  name: string;
-  image?: string;
-  isGroup: boolean;
-  members: GroupMember[];
-}
 
 export const useGroupConversationManager = () => {
   const { user, localStrings } = useAuth();
@@ -31,19 +15,11 @@ export const useGroupConversationManager = () => {
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const [groupError, setGroupError] = useState<string | null>(null);
   const [conversationMembers, setConversationMembers] = useState<UserModel[]>([]);
-  const [groupName, setGroupName] = useState("");
-  const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
-  const [activeGroup, setActiveGroup] = useState<GroupChatInfo | null>(null);
-  const { setActiveFriend, findFriendByConversationId } = useMessageViewModel();
 
   useEffect(() => {
     const members = searchParams?.get("members");
-    const conversation = searchParams?.get("conversation");
-    
     if (members) {
       handleGroupCreation(members.split(","));
-    } else if (conversation) {
-      loadExistingGroupConversation(conversation);
     }
   }, [searchParams]);
 
@@ -104,122 +80,6 @@ export const useGroupConversationManager = () => {
     }
   }, [user?.id]);
 
-  const loadExistingGroupConversation = async (conversationId: string) => {
-    if (!user?.id) return;
-    
-    try {
-      setIsCreatingGroup(true);
-      
-      const conversation = await getConversationDetails(conversationId);
-      
-      if (conversation) {
-        const isGroup = await checkIfGroupConversation(conversationId);
-        
-        if (isGroup) {
-          const members = await fetchGroupMembers(conversationId);
-          setGroupMembers(members);
-          
-          const groupInfo: GroupChatInfo = {
-            id: conversationId,
-            name: conversation.name || "Group Chat",
-            image: conversation.image || "https://via.placeholder.com/40",
-            isGroup: true,
-            members: members
-          };
-          
-          setActiveGroup(groupInfo);
-          
-          const virtualFriend: FriendResponseModel = {
-            id: conversationId,
-            name: conversation.name || "Group Chat",
-            family_name: "",
-            avatar_url: conversation.image || "https://via.placeholder.com/40"
-          };
-          
-          Object.defineProperty(virtualFriend, 'isGroup', { value: true });
-          Object.defineProperty(virtualFriend, 'groupMembers', { value: members });
-          
-          setActiveFriend(virtualFriend);
-        } else {
-          const friend = await findFriendByConversationId(conversationId);
-          if (friend) {
-            setActiveFriend(friend);
-          }
-        }
-      }
-    } catch (error) {
-    } finally {
-      setIsCreatingGroup(false);
-    }
-  };
-
-  const getConversationDetails = async (conversationId: string) => {
-    try {
-      const response = await defaultMessagesRepo.getConversationById({
-        conversation_id: conversationId
-      });
-      
-      if (response.data) {
-        return response.data;
-      }
-    } catch (error) {
-    }
-    
-    return null;
-  };
-
-  const checkIfGroupConversation = async (conversationId: string) => {
-    try {
-      const response = await defaultMessagesRepo.getConversationDetailByUserID({
-        conversation_id: conversationId
-      });
-      
-      if (response.data) {
-        const members = Array.isArray(response.data) ? response.data : [response.data];
-        return members.length > 2;
-      }
-    } catch (error) {
-    }
-    
-    return false;
-  };
-
-  const fetchGroupMembers = async (conversationId: string): Promise<GroupMember[]> => {
-    try {
-      const response = await defaultMessagesRepo.getConversationDetailByUserID({
-        conversation_id: conversationId
-      });
-      
-      if (response.data) {
-        const details = Array.isArray(response.data) ? response.data : [response.data];
-        const members: GroupMember[] = [];
-        
-        for (const detail of details) {
-          if (detail.user_id) {
-            try {
-              const userResponse = await defaultProfileRepo.getProfile(detail.user_id);
-              
-              if (userResponse.data) {
-                members.push({
-                  id: userResponse.data.id || "",
-                  name: userResponse.data.name,
-                  family_name: userResponse.data.family_name,
-                  avatar_url: userResponse.data.avatar_url
-                });
-              }
-            } catch (error) {
-            }
-          }
-        }
-        
-        return members;
-      }
-    } catch (error) {
-    }
-    
-    return [];
-  };
-
   useEffect(() => {
     if (user?.id) {
       fetchConversationMembers();
@@ -232,7 +92,7 @@ export const useGroupConversationManager = () => {
     }
 
     if (memberIds.length < 3) {
-      setGroupError(localStrings.Messages.GroupMinimumMembers || "Group chat must have at least 3 members");
+      setGroupError(localStrings.Messages.GroupMinimumMembers || "Nhóm chat phải có ít nhất 3 thành viên");
       return;
     }
 
@@ -254,10 +114,11 @@ export const useGroupConversationManager = () => {
       if (conversationId) {
         router.push(`/messages?conversation=${conversationId}`);
       } else {
-        setGroupError(localStrings.Messages.GroupCreationFailed || "Failed to create group chat");
+        setGroupError(localStrings.Messages.GroupCreationFailed || "Không thể tạo nhóm chat");
       }
     } catch (error) {
-      setGroupError(localStrings.Messages.GroupCreationFailed || "Failed to create group chat");
+      console.error("Lỗi khi tạo nhóm chat:", error);
+      setGroupError(localStrings.Messages.GroupCreationFailed || "Không thể tạo nhóm chat");
     } finally {
       setIsCreatingGroup(false);
       
@@ -299,14 +160,11 @@ export const useGroupConversationManager = () => {
           .map(member => member.user_id)
           .filter(Boolean) as string[];
 
-        if (memberIds.length === memberUserIds.length) {
-          const allMembersMatch = memberIds.every(id => 
-            memberUserIds.includes(id)
-          );
-          
-          if (allMembersMatch) {
-            return conversation.id;
-          }
+        const sortedConversationMemberIds = [...memberUserIds].sort();
+
+        if (memberIds.length === sortedConversationMemberIds.length &&
+            JSON.stringify(memberIds) === JSON.stringify(sortedConversationMemberIds)) {
+          return conversation.id;
         }
       }
     } catch (error) {
@@ -320,33 +178,19 @@ export const useGroupConversationManager = () => {
 
     try {
       let memberNames: string[] = [];
-      const memberProfiles: GroupMember[] = [];
-      
       for (const id of memberIds) {
         if (id === user.id) {
-          memberNames.push(`${localStrings.Messages.You}`);
-          memberProfiles.push({
-            id: user.id,
-            name: user.name,
-            family_name: user.family_name,
-            avatar_url: user.avatar_url
-          });
+          memberNames.push(`Bạn`);
           continue;
         }
         
         try {
           const profileRes = await defaultProfileRepo.getProfile(id);
           if (profileRes?.data) {
-            memberNames.push(`${profileRes.data.family_name || ""} ${profileRes.data.name || ""}`.trim());
-            memberProfiles.push({
-              id: profileRes.data.id || "",
-              name: profileRes.data.name,
-              family_name: profileRes.data.family_name,
-              avatar_url: profileRes.data.avatar_url
-            });
+            memberNames.push(profileRes.data.name || "Người dùng");
           }
         } catch (error) {
-          memberNames.push(localStrings.Public.UnknownUser || "Unknown User");
+          memberNames.push("Người dùng");
         }
       }
 
@@ -354,7 +198,7 @@ export const useGroupConversationManager = () => {
       if (memberNames.length <= 3) {
         groupName = memberNames.join(", ");
       } else {
-        groupName = `${memberNames.slice(0, 3).join(", ")} ${localStrings.Public.More || "and more"}...`;
+        groupName = `vip`;
       }
 
       if (groupName.length > 50) {
@@ -362,12 +206,11 @@ export const useGroupConversationManager = () => {
       }
 
       const conversationRes = await defaultMessagesRepo.createConversation({
-        name: groupName,
-        image: "https://via.placeholder.com/40"
+        name: groupName
       });
 
       if (!conversationRes.data?.id) {
-        throw new Error("Could not create group conversation");
+        throw new Error("Không thể tạo cuộc trò chuyện nhóm");
       }
 
       const conversationId = conversationRes.data.id;
@@ -378,9 +221,7 @@ export const useGroupConversationManager = () => {
           user_id: memberId
         });
       }
-      
-      setGroupMembers(memberProfiles);
-      
+
       return conversationId;
     } catch (error) {
       return null;
@@ -393,13 +234,6 @@ export const useGroupConversationManager = () => {
     handleGroupCreation,
     findExistingGroupConversation,
     conversationMembers,
-    fetchConversationMembers,
-    groupName,
-    setGroupName,
-    groupMembers,
-    setGroupMembers,
-    loadExistingGroupConversation,
-    fetchGroupMembers,
-    activeGroup
+    fetchConversationMembers
   };
 };
