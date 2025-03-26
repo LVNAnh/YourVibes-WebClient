@@ -1,13 +1,13 @@
 import { useEffect, RefObject } from 'react';
-import { FriendResponseModel } from '@/api/features/profile/model/FriendReponseModel';
 import { MessageResponseModel } from '@/api/features/messages/models/MessageModel';
+import { ConversationWithMembers } from '../../viewModel/components/ConversationViewModel';
 
 export const useMessageEffects = (
   messagesEndRef: RefObject<HTMLDivElement>,
-  activeFriend: FriendResponseModel | null,
+  activeConversationId: string | null,
   messages: Record<string, MessageResponseModel[]>,
   forceUpdateTempMessages: () => void,
-  fetchFriends: (page: number) => void,
+  fetchConversations: () => void,
   scrollToBottom: () => void,
   user: any
 ) => {
@@ -16,33 +16,33 @@ export const useMessageEffects = (
     setTimeout(() => {
       scrollToBottom();
     }, 300);
-  }, [messages, activeFriend, scrollToBottom]);
+  }, [messages, activeConversationId, scrollToBottom]);
   
   // Update temporary messages
   useEffect(() => {
     const intervalId = setInterval(() => {
-      if (activeFriend?.id) {
+      if (activeConversationId) {
         forceUpdateTempMessages();
       }
     }, 200);
     
     return () => clearInterval(intervalId);
-  }, [activeFriend, forceUpdateTempMessages]);
+  }, [activeConversationId, forceUpdateTempMessages]);
   
   // Log message count for debugging
   useEffect(() => {
-    if (activeFriend?.id) {
-      const friendMessages = messages[activeFriend.id];
-      console.log(`Render với ${friendMessages?.length || 0} tin nhắn cho friend ${activeFriend.id}`);
+    if (activeConversationId) {
+      const conversationMessages = messages[activeConversationId];
+      console.log(`Render with ${conversationMessages?.length || 0} messages for conversation ${activeConversationId}`);
     }
-  }, [messages, activeFriend]);
+  }, [messages, activeConversationId]);
 
-  // Fetch friends list
+  // Fetch conversations list
   useEffect(() => {
     if (user?.id) {
-      fetchFriends(1);
+      fetchConversations();
     }
-  }, [user, fetchFriends]);
+  }, [user, fetchConversations]);
 
   // Handle responsive UI
   useEffect(() => {
@@ -58,13 +58,13 @@ export const useMessageEffects = (
 };
 
 export const useResponsiveEffects = (
-  activeFriend: FriendResponseModel | null,
+  activeConversation: ConversationWithMembers | null,
   setShowSidebar: (show: boolean) => void
 ) => {
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth < 768) {
-        setShowSidebar(!activeFriend);
+        setShowSidebar(!activeConversation);
       } else {
         setShowSidebar(true);
       }
@@ -74,11 +74,11 @@ export const useResponsiveEffects = (
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [activeFriend, setShowSidebar]);
+  }, [activeConversation, setShowSidebar]);
 
   useEffect(() => {
     if (window.innerWidth < 768) {
-      setShowSidebar(!activeFriend);
+      setShowSidebar(!activeConversation);
     }
-  }, [activeFriend, setShowSidebar]);
+  }, [activeConversation, setShowSidebar]);
 };

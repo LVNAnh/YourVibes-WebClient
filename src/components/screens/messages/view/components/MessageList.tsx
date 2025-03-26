@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Spin } from 'antd';
 import { MessageListProps, MessageDateGroup } from '../../types/messageTypes';
 import MessageItem from './MessageItem';
@@ -12,8 +12,14 @@ const MessageList: React.FC<MessageListProps> = ({
   activeFriend,
   isLoadingMessages,
   isCreatingGroup,
-  localStrings
+  localStrings,
+  activeConversationId
 }) => {
+  
+  // Debug log to track messages receiving
+  useEffect(() => {
+    console.log("MessageList received messages:", messages.length, "for conversation:", activeConversationId);
+  }, [messages, activeConversationId]);
   // Check if user is message sender
   const isUserMessage = (userId?: string) => userId === currentUser?.id;
 
@@ -39,7 +45,6 @@ const MessageList: React.FC<MessageListProps> = ({
       messagesByDate[dateKey].messages.push(message);
     });
     
-    // Sort by date ascending
     return Object.values(messagesByDate).sort((a, b) => a.dateKey.localeCompare(b.dateKey));
   };
 
@@ -53,11 +58,11 @@ const MessageList: React.FC<MessageListProps> = ({
       {activeFriend ? (
         isLoadingMessages ? (
           <div className="flex justify-center items-center h-full">
-            <Spin size="large" tip="Đang tải tin nhắn..." />
+            <Spin size="large" tip={localStrings.Messages.LoadingMessages || "Loading messages..."} />
           </div>
         ) : isCreatingGroup ? (
           <div className="flex justify-center items-center h-full">
-            <Spin size="large" tip="Đang tạo nhóm chat..." />
+            <Spin size="large" tip={localStrings.Messages.CreatingGroup || "Creating group chat..."} />
           </div>
         ) : messages.length > 0 ? (
           <>
@@ -87,7 +92,7 @@ const MessageList: React.FC<MessageListProps> = ({
           <p className="text-gray-500 text-center py-8">{localStrings.Messages.NoMessages}</p>
         )
       ) : (
-        <p className="text-gray-500 text-center py-8">{localStrings.Messages.ChooseFriendToConnect}</p>
+        <p className="text-gray-500 text-center py-8">{localStrings.Messages.ChooseConversationToConnect || "Please select a conversation to start messaging"}</p>
       )}
     </div>
   );

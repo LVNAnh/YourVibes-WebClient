@@ -2,6 +2,7 @@ import { MessageResponseModel } from "@/api/features/messages/models/MessageMode
 import { FriendResponseModel } from "@/api/features/profile/model/FriendReponseModel";
 import { UserModel } from "@/api/features/authenticate/model/LoginModel";
 import { RefObject } from "react";
+import { ConversationWithMembers } from "../viewModel/components/ConversationViewModel";
 
 export interface MessageUIState {
   showEmojiPicker: boolean;
@@ -28,14 +29,14 @@ export interface MessageDateGroup {
   messages: MessageResponseModel[];
 }
 
-export interface FriendSidebarProps {
-  friends: FriendResponseModel[];
-  activeFriend: FriendResponseModel | null;
+export interface ConversationsSidebarProps {
+  conversations: ConversationWithMembers[];
+  activeConversationId: string | null;
   messages: Record<string, MessageResponseModel[]>;
-  friendSearchText: string;
+  searchText: string;
   currentUser: UserModel | null;
   onSearchChange: (text: string) => void;
-  onFriendSelect: (friend: FriendResponseModel) => void;
+  onConversationSelect: (conversation: ConversationWithMembers) => void;
   onCreateGroup: () => void;
   localStrings: any;
 }
@@ -58,6 +59,7 @@ export interface MessageListProps {
   isLoadingMessages: boolean;
   isCreatingGroup: boolean;
   localStrings: any;
+  activeConversationId: string | null;
 }
 
 export interface MessageInputProps {

@@ -106,7 +106,24 @@ export class MessagesRepo implements IMessagesRepo {
   async getMessagesByConversationId(
     data: GetMessagesByConversationIdRequestModel
   ): Promise<BaseApiResponseModel<MessageResponseModel>> {
-    return client.get(ApiPath.GET_MESSAGES_BY_CONVERSATION_ID, data);
+    console.log("API call - getMessagesByConversationId with params:", data);
+    
+    if (!data.conversation_id) {
+      console.error("Missing conversation_id in getMessagesByConversationId call");
+      throw new Error("conversation_id is required");
+    }
+    
+    try {
+      const response = await client.get(
+        `${ApiPath.GET_MESSAGES_BY_CONVERSATION_ID}?conversation_id=${data.conversation_id}&page=${data.page || 1}&limit=${data.limit || 100}`
+      );
+      
+      console.log("API response received:", response);
+      return response;
+    } catch (error) {
+      console.error("Error in getMessagesByConversationId:", error);
+      throw error;
+    }
   }
 
   async getMessageByID(

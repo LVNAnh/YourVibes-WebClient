@@ -4,6 +4,7 @@ import { message as antdMessage } from 'antd';
 import { EmojiClickData } from 'emoji-picker-react';
 import { FriendResponseModel } from '@/api/features/profile/model/FriendReponseModel';
 import { MessageResponseModel } from '@/api/features/messages/models/MessageModel';
+import { ConversationWithMembers } from '../../viewModel/components/ConversationViewModel';
 
 export const useUIState = (
   localStrings: any,
@@ -52,7 +53,7 @@ export const useUIState = (
   }, []);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && newMessage.trim() && activeFriend) {
+    if (e.key === 'Enter' && newMessage.trim() && activeConversationId) {
       if (newMessage.length > 500) {
         antdMessage.error({
           content: localStrings.Messages.MessageTooLong || "Tin nhắn không được vượt quá 500 ký tự",
@@ -63,10 +64,10 @@ export const useUIState = (
       
       sendChatMessage();
     }
-  }, [newMessage, activeFriend, localStrings]);
+  }, [newMessage, activeConversationId, localStrings]);
 
   const sendChatMessage = useCallback(() => {
-    if (!newMessage.trim() || !activeFriend || !activeConversationId) return;
+    if (!newMessage.trim() || !activeConversationId) return;
     
     if (newMessage.length > 500) {
       antdMessage.error({
@@ -86,9 +87,9 @@ export const useUIState = (
         scrollToBottom();
       }, 100);
     }
-  }, [newMessage, activeFriend, activeConversationId, replyTo, handleSendMessage, setNewMessage, setReplyTo, scrollToBottom, localStrings]);
+  }, [newMessage, activeConversationId, replyTo, handleSendMessage, setNewMessage, setReplyTo, scrollToBottom, localStrings]);
 
-  const handleBackToFriendList = useCallback(() => {
+  const handleBackToConversationList = useCallback(() => {
     setActiveFriend(null);
     setUIState(prev => ({ ...prev, showSidebar: true }));
   }, [setActiveFriend]);
@@ -124,7 +125,7 @@ export const useUIState = (
     handleScroll,
     handleKeyDown,
     sendChatMessage,
-    handleBackToFriendList,
+    handleBackToConversationList,
     updateUIState,
     toggleGroupModal,
     handleFriendSelect

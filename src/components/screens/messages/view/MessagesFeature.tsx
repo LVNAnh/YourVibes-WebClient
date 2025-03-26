@@ -10,7 +10,7 @@ import { useMessageEffects, useResponsiveEffects } from './hooks/useMessageEffec
 import useUIState from './hooks/useUIState';
 
 // Component imports
-import FriendsSidebar from './components/FriendsSidebar';
+import ConversationsSidebar from './components/ConversationsSidebar';
 import ConversationHeader from './components/ConversationHeader';
 import MessageList from './components/MessageList';
 import MessageInput from './components/MessageInput';
@@ -32,13 +32,16 @@ const MessagesFeature = () => {
     setNewMessage,
     activeFriend,         
     setActiveFriend,
+    activeConversation,
+    setActiveConversation,
+    handleConversationSelect,
     messages,
     fetchMessages,
     replyTo,
     setReplyTo,
     messagesEndRef,
-    fetchFriends,
-    friends,
+    fetchConversations,
+    conversations,
     fetchUserProfile,
     setIsProfileModalOpen,
     isProfileModalOpen,
@@ -47,6 +50,7 @@ const MessagesFeature = () => {
     handleSendMessage,
     isConnected,
     isLoadingMessages,
+    isLoadingConversations,
     forceUpdateTempMessages
   } = useMessageViewModel();
 
@@ -59,14 +63,6 @@ const MessagesFeature = () => {
     findExistingGroupConversation
   } = useGroupConversationManager();
 
-  // Conversation view model
-  const {
-    setActiveConversationId,
-    conversations,
-    fetchAllConversations,
-    isLoadingConversations
-  } = useConversationViewModel();
-
   // UI state management
   const {
     uiState,
@@ -76,7 +72,7 @@ const MessagesFeature = () => {
     handleScroll,
     handleKeyDown,
     sendChatMessage,
-    handleBackToFriendList,
+    handleBackToConversationList,
     updateUIState,
     toggleGroupModal,
     handleFriendSelect
@@ -96,31 +92,26 @@ const MessagesFeature = () => {
   // Effects
   useMessageEffects(
     messagesEndRef,
-    activeFriend,
+    activeConversationId,
     messages,
     forceUpdateTempMessages,
-    fetchFriends,
+    fetchConversations,
     scrollToBottom,
     user
   );
 
   useResponsiveEffects(
-    activeFriend,
+    activeConversation,
     (show) => updateUIState({ showSidebar: show })
   );
 
-  // Search params effects
+  // Debug the active conversation state for troubleshooting
   React.useEffect(() => {
-    const conversationId = searchParams?.get("conversation");
-    if (conversationId) {
-      console.log("Loading conversation with ID:", conversationId);
+    if (activeConversationId) {
+      console.log("Active conversation ID:", activeConversationId);
+      console.log("Messages for this conversation:", messages[activeConversationId] || []);
     }
-    
-    const members = searchParams?.get("members");
-    if (members) {
-      console.log("Members parameter found:", members);
-    }
-  }, [searchParams]);
+  }, [activeConversationId, messages]);
 
   // Create group chat handler
   const createGroupChat = async () => {
@@ -144,14 +135,14 @@ const MessagesFeature = () => {
     <div className="flex flex-col md:flex-row h-[85vh] p-2 md:p-4 relative">
       {/* Left Side Bar */}
       {uiState.showSidebar && (
-        <FriendsSidebar
-          friends={friends}
-          activeFriend={activeFriend}
+        <ConversationsSidebar
+          conversations={conversations}
+          activeConversationId={activeConversationId}
           messages={messages}
-          friendSearchText={uiState.friendSearchText}
+          searchText={uiState.friendSearchText}
           currentUser={user}
           onSearchChange={(text) => updateUIState({ friendSearchText: text })}
-          onFriendSelect={setActiveFriend}
+          onConversationSelect={handleConversationSelect}
           onCreateGroup={toggleGroupModal}
           localStrings={localStrings}
         />
@@ -163,14 +154,14 @@ const MessagesFeature = () => {
         <ConversationHeader
           activeFriend={activeFriend}
           isConnected={isConnected}
-          onBackClick={handleBackToFriendList}
+          onBackClick={handleBackToConversationList}
           onProfileView={fetchUserProfile}
           localStrings={localStrings}
         />
 
         {/* Conversation Content */}
         <MessageList
-          messages={activeFriend?.id ? messages[activeFriend.id] || [] : []}
+          messages={activeConversationId && messages[activeConversationId] ? messages[activeConversationId] : []}
           currentUser={user}
           onReply={setReplyTo}
           messagesEndRef={messagesEndRef}
@@ -179,6 +170,7 @@ const MessagesFeature = () => {
           isLoadingMessages={isLoadingMessages}
           isCreatingGroup={isCreatingGroup}
           localStrings={localStrings}
+          activeConversationId={activeConversationId}
         />
         
         {/* Scroll to bottom button */}
@@ -208,7 +200,7 @@ const MessagesFeature = () => {
       {/* Modals */}
       <CreateGroupModal
         isOpen={uiState.showGroupModal}
-        friends={friends}
+        friends={conversationMembers}
         selectedFriends={uiState.selectedFriends}
         groupSearch={uiState.groupSearch}
         onClose={toggleGroupModal}

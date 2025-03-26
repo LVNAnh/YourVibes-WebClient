@@ -1,10 +1,10 @@
 import { UserModel } from '@/api/features/authenticate/model/LoginModel';
 import { FriendResponseModel } from '@/api/features/profile/model/FriendReponseModel';
 import { defaultProfileRepo } from '@/api/features/profile/ProfileRepository';
-import { MessageResponseModel } from '@/api/features/messages/models/MessageModel';
+import { GetMessagesByConversationIdRequestModel, MessageResponseModel } from '@/api/features/messages/models/MessageModel';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/context/auth/useAuth';
-import { useConversationViewModel } from './components/ConversationViewModel';
+import { useConversationViewModel, ConversationWithMembers } from './components/ConversationViewModel';
 import { defaultMessagesRepo } from '@/api/features/messages/MessagesRepo';
 import { useWebSocketConnect } from './components/WebSocketConnect';
 import { ConversationDetailResponseModel } from '@/api/features/messages/models/ConversationDetailModel';
@@ -12,13 +12,18 @@ import { GroupMember } from './components/GroupConversationManager';
 
 export const useMessageViewModel = () => {
   const { user, localStrings } = useAuth();
-  const { getExistingConversation } = useConversationViewModel();
+  const { 
+    getExistingConversation, 
+    conversations,
+    fetchAllConversations,
+    isLoadingConversations 
+  } = useConversationViewModel();
   
   const [newMessage, setNewMessage] = useState('');
   const [activeFriend, setActiveFriend] = useState<FriendResponseModel | null>(null);
+  const [activeConversation, setActiveConversation] = useState<ConversationWithMembers | null>(null);
   const [replyTo, setReplyTo] = useState<MessageResponseModel | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [friends, setFriends] = useState<FriendResponseModel[]>([]);
   const [activeFriendProfile, setActiveFriendProfile] = useState<UserModel | null>(null); 
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
@@ -43,75 +48,105 @@ export const useMessageViewModel = () => {
   }, [messages]);
 
   useEffect(() => {
-    if (activeFriend && user?.id) {
-      const isGroup = Object.prototype.hasOwnProperty.call(activeFriend, 'isGroup') && 
-                     (activeFriend as any).isGroup === true;
-      
-      if (isGroup) {
-        setActiveConversationId(activeFriend.id || '');
-        initializeConversation(activeFriend.id || '');
-        fetchMessages(activeFriend.id || '');
-      } else {
-        setupConversationForFriend(activeFriend.id || '');
+    if (activeConversation && user?.id) {
+      setActiveConversationId(activeConversation.id || '');
+      initializeConversation(activeConversation.id || '');
+      fetchMessages(activeConversation.id || '');
+    }
+  }, [activeConversation, user?.id]);
+
+  // Load friend info from conversation for UI compatibility
+  useEffect(() => {
+    if (activeConversation && user?.id) {
+      // If it's a direct conversation with only 2 members
+      if (activeConversation.members && 
+          activeConversation.members.length === 2 && 
+          !activeConversation.isGroup) {
+        // Find the other user in the conversation
+        const otherMember = activeConversation.members.find(member => 
+          member.user_id !== user.id && member.user
+        );
+        
+        if (otherMember && otherMember.user) {
+          // Create a FriendResponseModel from the other user
+          const friend: FriendResponseModel = {
+            id: otherMember.user_id || '',
+            name: otherMember.user?.name || '',
+            family_name: otherMember.user?.family_name || '',
+            avatar_url: otherMember.user?.avatar_url || ''
+          };
+          setActiveFriend(friend);
+        }
+      } else if (activeConversation.isGroup) {
+        // Handle group conversations
+        const groupFriend: FriendResponseModel = {
+          id: activeConversation.id || '',
+          name: activeConversation.name || 'Group Chat',
+          family_name: '',
+          avatar_url: activeConversation.image || 'https://via.placeholder.com/40'
+        };
+        // Add isGroup flag
+        Object.defineProperty(groupFriend, 'isGroup', { value: true });
+        // Add group members if available
+        if (activeConversation.members) {
+          const groupMembers: GroupMember[] = activeConversation.members
+            .filter(member => member.user)
+            .map(member => ({
+              id: member.user_id || '',
+              name: member.user?.name || '',
+              family_name: member.user?.family_name || '',
+              avatar_url: member.user?.avatar_url || ''
+            }));
+          Object.defineProperty(groupFriend, 'groupMembers', { value: groupMembers });
+        }
+        setActiveFriend(groupFriend);
       }
     }
-  }, [activeFriend, user?.id]);
+  }, [activeConversation, user?.id]);
   
   useEffect(() => {
-    if (activeFriend?.id && !isLoadingMessages) {
+    if (activeConversation?.id && !isLoadingMessages) {
       const timerId = setTimeout(() => {
-        updateTemporaryMessages(activeFriend.id || '');
+        updateTemporaryMessages(activeConversation.id || '');
       }, 200);
       
       return () => clearTimeout(timerId);
     }
-  }, [activeFriend?.id, isLoadingMessages, updateTemporaryMessages]);
-
-  const setupConversationForFriend = async (friendId: string) => {
-    if (!user?.id) return;
-    
-    try {
-      setIsLoadingMessages(true);
-      
-      const existingConvId = await getExistingConversation(user.id, friendId);
-      
-      if (existingConvId) {
-        setActiveConversationId(existingConvId);
-        initializeConversation(existingConvId);
-        fetchMessages(existingConvId);
-      } else {
-        const newConversation = await createNewConversation(user.id, friendId);
-        
-        if (newConversation) {
-          setActiveConversationId(newConversation);
-          initializeConversation(newConversation);
-        }
-      }
-    } catch (error) {
-    } finally {
-      setIsLoadingMessages(false);
-    }
-  };
+  }, [activeConversation?.id, isLoadingMessages, updateTemporaryMessages]);
 
   const fetchMessages = useCallback(async (conversationId: string) => {
-    if (!conversationId || !activeFriend?.id) {
+    if (!conversationId) {
+      console.error("No conversation ID provided to fetchMessages");
       return;
     }
     
     try {
       setIsLoadingMessages(true);
+      console.log("Fetching messages for conversation:", conversationId);
       
-      const response = await defaultMessagesRepo.getMessagesByConversationId({
+      // Create the proper request model
+      const requestParams: GetMessagesByConversationIdRequestModel = {
         conversation_id: conversationId,
         page: 1,
-        limit: 100,
-      });
+        limit: 100
+      };
       
-      if (response.data) {
+      console.log("API request parameters:", requestParams);
+      
+      // Call the modified API method
+      const response = await defaultMessagesRepo.getMessagesByConversationId(requestParams);
+      
+      console.log("API response for messages:", response);
+      
+      if (response && response.data) {
+        // Process the response data
         const fetchedMessages = Array.isArray(response.data) 
-          ? response.data as MessageResponseModel[] 
-          : [response.data as MessageResponseModel]
+          ? response.data 
+          : [response.data];
         
+        console.log("Fetched messages:", fetchedMessages);
+        
+        // Normalize message format
         const normalizedMessages = fetchedMessages.map(msg => ({
           ...msg,
           text: msg.content || msg.text,
@@ -119,204 +154,59 @@ export const useMessageViewModel = () => {
           isTemporary: false 
         }));
         
+        // Sort messages by creation date
         const sortedMessages = normalizedMessages.sort(
           (a, b) => new Date(a.created_at || '').getTime() - new Date(b.created_at || '').getTime()
         );
         
+        // Update the messages state for this specific conversation ID
         setMessages(prevMessages => {
-          const friendId = activeFriend.id || '';
-          
-          return {
+          const newMessages = {
             ...prevMessages,
-            [friendId]: sortedMessages
+            [conversationId]: sortedMessages
           };
+          console.log("Updated messages state:", newMessages);
+          return newMessages;
         });
+      } else {
+        console.warn("No message data returned from API");
+        // Initialize with empty array to prevent undefined
+        setMessages(prevMessages => ({
+          ...prevMessages,
+          [conversationId]: []
+        }));
       }
     } catch (err) {
+      console.error("Error fetching messages:", err);
+      // Initialize with empty array on error
+      setMessages(prevMessages => ({
+        ...prevMessages,
+        [conversationId]: []
+      }));
     } finally {
       setIsLoadingMessages(false);
     }
-  }, [activeFriend, setMessages]);
+  }, [setMessages, setIsLoadingMessages]);
 
-  const findFriendByConversationId = useCallback(async (conversationId: string): Promise<FriendResponseModel | null> => {
-    if (!user?.id) return null;
+  const handleConversationSelect = useCallback((conversation: ConversationWithMembers) => {
+    setActiveConversation(conversation);
     
-    try {
+    // Set conversation ID and initialize connection
+    if (conversation.id) {
+      const conversationId = conversation.id;
+      console.log("Selecting conversation:", conversationId);
+      
+      setActiveConversationId(conversationId);
+      
+      // Always fetch messages when selecting a conversation to ensure fresh data
       setIsLoadingMessages(true);
-      
-      const conversationResponse = await defaultMessagesRepo.getConversationById({
-        conversation_id: conversationId
+      fetchMessages(conversationId).then(() => {
+        console.log("Messages fetched and stored for conversation:", conversationId);
       });
       
-      if (conversationResponse.data) {
-        const conversationDetails = conversationResponse.data;
-        
-        const membersResponse = await defaultMessagesRepo.getConversationDetailByUserID({
-          conversation_id: conversationId
-        });
-        
-        if (membersResponse.data) {
-          const members = Array.isArray(membersResponse.data) ? membersResponse.data : [membersResponse.data];
-          
-          if (members.length > 2) {
-            const groupMembers: GroupMember[] = [];
-            
-            for (const member of members) {
-              if (member.user_id) {
-                try {
-                  const userResponse = await defaultProfileRepo.getProfile(member.user_id);
-                  if (userResponse.data) {
-                    groupMembers.push({
-                      id: userResponse.data.id || "",
-                      name: userResponse.data.name,
-                      family_name: userResponse.data.family_name,
-                      avatar_url: userResponse.data.avatar_url
-                    });
-                  }
-                } catch (error) {
-                }
-              }
-            }
-            
-            const groupFriend: FriendResponseModel = {
-              id: conversationId,
-              name: conversationDetails.name || "Group Chat",
-              family_name: "",
-              avatar_url: conversationDetails.image || "https://via.placeholder.com/40"
-            };
-            
-            Object.defineProperty(groupFriend, 'isGroup', { value: true });
-            Object.defineProperty(groupFriend, 'groupMembers', { value: groupMembers });
-            
-            initializeConversation(conversationId);
-            fetchMessages(conversationId);
-            
-            return groupFriend;
-          } else {
-            const otherUser = members.find(detail => 
-              detail.user_id !== user.id
-            );
-            
-            if (!otherUser || !otherUser.user) {
-              return null;
-            }
-            
-            const friend: FriendResponseModel = {
-              id: otherUser.user.id,
-              name: otherUser.user.name,
-              family_name: otherUser.user.family_name,
-              avatar_url: otherUser.user.avatar_url
-            };
-            
-            initializeConversation(conversationId);
-            fetchMessages(conversationId);
-            
-            return friend;
-          }
-        }
-      }
-      
-      return null;
-    } catch (error) {
-      return null;
-    } finally {
-      setIsLoadingMessages(false);
+      initializeConversation(conversationId);
     }
-  }, [user, initializeConversation, fetchMessages]);
-  
-  const createNewConversation = useCallback(async (userId: string, friendId: string, retryCount = 0): Promise<string | null> => {
-    try {
-      const friend = friends.find(f => f.id === friendId);
-      const friendName = friend ? `${friend.family_name || ''} ${friend.name || ''}`.trim() : 'friend';
-      const userName = user ? `${user.family_name || ''} ${user.name || ''}`.trim() : 'user';
-      
-      let conversationName = `Chat: ${userName} - ${friendName}`;
-      if (conversationName.length > 30) {
-        const maxNameLength = 10; 
-        const truncatedUserName = userName.length > maxNameLength 
-          ? userName.substring(0, maxNameLength) + "..." 
-          : userName;
-        const truncatedFriendName = friendName.length > maxNameLength 
-          ? friendName.substring(0, maxNameLength) + "..." 
-          : friendName;
-        
-        conversationName = `Chat: ${truncatedUserName} - ${truncatedFriendName}`;
-        
-        if (conversationName.length > 30) {
-          conversationName = conversationName.substring(0, 29) + "…";
-        }
-      }
-      
-      const response = await defaultMessagesRepo.createConversation({
-        name: conversationName
-      });
-      
-      if (response.error) {
-        throw new Error(`API returned error: ${response.error.message}`);
-      }
-      
-      if (!response.data?.id) {
-        throw new Error("No conversation ID received in response");
-      }
-      
-      const conversationId = response.data.id;
-      
-      const userDetailResponse = await defaultMessagesRepo.createConversationDetail({
-        conversation_id: conversationId,
-        user_id: userId
-      });
-      
-      if (userDetailResponse.error) {
-        throw new Error(`Error adding user: ${userDetailResponse.error.message}`);
-      }
-      
-      const friendDetailResponse = await defaultMessagesRepo.createConversationDetail({
-        conversation_id: conversationId,
-        user_id: friendId
-      });
-      
-      if (friendDetailResponse.error) {
-        throw new Error(`Error adding friend: ${friendDetailResponse.error.message}`);
-      }
-      
-      return conversationId;
-    } catch (error) {
-      
-      if (retryCount < 2) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        return createNewConversation(userId, friendId, retryCount + 1);
-      }
-      
-      return null;
-    }
-  }, [user, friends]);
-
-  const fetchFriends = useCallback(async (page: number) => {
-    try {
-      const response = await defaultProfileRepo.getListFriends({
-        page: page,
-        limit: 20,
-        user_id: user?.id,
-      });
-
-      if (response?.data) {
-        if (Array.isArray(response?.data)) {
-          const friends = response?.data.map(
-            (friendResponse: UserModel) => ({
-              id: friendResponse.id,
-              family_name: friendResponse.family_name,
-              name: friendResponse.name,
-              avatar_url: friendResponse.avatar_url,
-            })
-          ) as UserModel[];
-          setFriends(friends);
-        } else {
-          setFriends([]);
-        }
-      }
-    } catch (error) {
-    }
-  }, [user]);
+  }, [setActiveConversationId, initializeConversation, fetchMessages, setIsLoadingMessages]);
 
   const fetchUserProfile = useCallback(async (userId: string) => {
     try {
@@ -326,13 +216,14 @@ export const useMessageViewModel = () => {
         setIsProfileModalOpen(true); 
       }
     } catch (error) {
+      console.error("Error fetching user profile:", error);
     }
   }, []);
 
   const handleSendMessage = useCallback((message: string, replyToMessage?: MessageResponseModel) => {
     setMessageError(null);
 
-    if (!message.trim() || !activeFriend || !activeConversationId) {
+    if (!message.trim() || !activeConversationId) {
       return false;
     }
     
@@ -361,18 +252,16 @@ export const useMessageViewModel = () => {
     };
     
     setMessages(prevMessages => {
-      const friendId = activeFriend.id || '';
-      
-      if (!prevMessages[friendId]) {
+      if (!prevMessages[activeConversationId]) {
         return {
           ...prevMessages,
-          [friendId]: [tempMessage]
+          [activeConversationId]: [tempMessage]
         };
       }
       
       return {
         ...prevMessages,
-        [friendId]: [...prevMessages[friendId], tempMessage]
+        [activeConversationId]: [...prevMessages[activeConversationId], tempMessage]
       };
     });
     
@@ -393,10 +282,9 @@ export const useMessageViewModel = () => {
       }).then(response => {
         if (response.data && response.data.id) {
           setMessages(prevMessages => {
-            const friendId = activeFriend.id || '';
-            if (!prevMessages[friendId]) return prevMessages;
+            if (!prevMessages[activeConversationId]) return prevMessages;
             
-            const updatedMessages = [...prevMessages[friendId]];
+            const updatedMessages = [...prevMessages[activeConversationId]];
             const tempIndex = updatedMessages.findIndex(
               msg => msg.id === tempId
             );
@@ -413,26 +301,34 @@ export const useMessageViewModel = () => {
             
             return {
               ...prevMessages,
-              [friendId]: updatedMessages
+              [activeConversationId]: updatedMessages
             };
           });
         }
       }).catch(error => {
+        console.error("Error creating message:", error);
       });
     }
     
     setTimeout(() => {
-      updateTemporaryMessages(activeFriend.id || '');
+      updateTemporaryMessages(activeConversationId);
     }, 3000);
     
     return true;
-  }, [activeFriend, activeConversationId, user, sendMessage, setMessages, updateTemporaryMessages, localStrings]);
+  }, [activeConversationId, user, sendMessage, setMessages, updateTemporaryMessages, localStrings]);
 
   const forceUpdateTempMessages = useCallback(() => {
-    if (activeFriend?.id) {
-      updateTemporaryMessages(activeFriend.id);
+    if (activeConversationId) {
+      updateTemporaryMessages(activeConversationId);
     }
-  }, [activeFriend, updateTemporaryMessages]);
+  }, [activeConversationId, updateTemporaryMessages]);
+
+  // Modified to use conversation API instead of friends API
+  const fetchConversations = useCallback(async () => {
+    if (user?.id) {
+      fetchAllConversations();
+    }
+  }, [user?.id, fetchAllConversations]);
 
   return {
     fetchMessages,
@@ -440,6 +336,9 @@ export const useMessageViewModel = () => {
     setNewMessage,
     activeFriend,
     setActiveFriend,
+    activeConversation,
+    setActiveConversation,
+    handleConversationSelect,
     messages,
     setMessages,
     messageError,
@@ -447,8 +346,8 @@ export const useMessageViewModel = () => {
     replyTo,
     setReplyTo,
     messagesEndRef,
-    fetchFriends,
-    friends,
+    fetchConversations,  // Renamed from fetchFriends
+    conversations,       // Using conversations instead of friends
     fetchUserProfile, 
     activeFriendProfile, 
     isProfileModalOpen, 
@@ -459,7 +358,7 @@ export const useMessageViewModel = () => {
     handleSendMessage,
     isConnected,
     isLoadingMessages,
-    forceUpdateTempMessages,
-    findFriendByConversationId
+    isLoadingConversations,
+    forceUpdateTempMessages
   };
 };
