@@ -32,78 +32,136 @@ export const useMessagesViewModel = () => {
   // Connect to WebSocket when user is available
   useEffect(() => {
     if (user?.id) {
+      // Disconnect existing socket if any
+      if (socket) {
+        socket.close();
+      }
+      
       const wsUrl = `${ApiPath.CONNECT_TO_WEBSOCKET}${user.id}`;
-      const ws = new WebSocket(wsUrl);
       
-      ws.onopen = () => {
-        console.log("WebSocket connection established");
-      };
-      
-      ws.onmessage = (event) => {
-        try {
-          const newMessage = JSON.parse(event.data);
-          
-          // If the message is for the current conversation, add it to the messages
-          if (currentConversation && newMessage.conversation_id === currentConversation.id) {
-            setMessages(prev => [...prev, newMessage]);
+      try {
+        const ws = new WebSocket(wsUrl);
+        
+        ws.onopen = () => {
+          console.log("WebSocket connection established");
+        };
+        
+        ws.onmessage = (event) => {
+          try {
+            const newMessage = JSON.parse(event.data);
+            
+            // If the message is for the current conversation, add it to the messages
+            if (currentConversation && newMessage.conversation_id === currentConversation.id) {
+              setMessages(prev => [...prev, newMessage]);
+            }
+            
+            // Instead of refreshing all conversations, we'll update just the conversation
+            // with the new message to avoid excessive API calls
+            if (newMessage.conversation_id) {
+              setConversations(prev => {
+                const conversationIndex = prev.findIndex(c => c.id === newMessage.conversation_id);
+                if (conversationIndex >= 0) {
+                  // Move the conversation with new message to the top
+                  const updatedConversations = [...prev];
+                  const conversation = { ...updatedConversations[conversationIndex] };
+                  updatedConversations.splice(conversationIndex, 1);
+                  updatedConversations.unshift(conversation);
+                  return updatedConversations;
+                }
+                return prev;
+              });
+            }
+          } catch (error) {
+            console.error("Error processing WebSocket message:", error);
           }
-          
-          // Refresh conversations list to update last message
-          fetchConversations();
-        } catch (error) {
-          console.error("Error processing WebSocket message:", error);
-        }
-      };
-      
-      ws.onerror = (error) => {
-        console.error("WebSocket error:", error);
-      };
-      
-      ws.onclose = () => {
-        console.log("WebSocket connection closed");
-      };
-      
-      setSocket(ws);
-      
-      // Clean up WebSocket connection on unmount
-      return () => {
-        ws.close();
-      };
+        };
+        
+        ws.onerror = (error) => {
+          console.error("WebSocket error:", error);
+        };
+        
+        ws.onclose = () => {
+          console.log("WebSocket connection closed");
+        };
+        
+        setSocket(ws);
+        
+        // Clean up WebSocket connection on unmount
+        return () => {
+          ws.close();
+        };
+      } catch (error) {
+        console.error("Error creating WebSocket connection:", error);
+      }
     }
-  }, [user?.id]);
+  }, [user?.id, currentConversation?.id]);
 
-  // Fetch conversations list
+  // Fetch conversations list for the current user
   const fetchConversations = useCallback(async (page = 1, limit = 20) => {
-    if (conversationsLoading || (page > 1 && isConversationsEnd)) return;
+    if (!user?.id || conversationsLoading || (page > 1 && isConversationsEnd)) return;
     
     setConversationsLoading(true);
     try {
-      const response = await defaultMessagesRepo.getConversations({
-        page,
-        limit
+      // Fetch conversation details for the current user first to get relevant conversations
+      const conversationDetailsResponse = await defaultMessagesRepo.getConversationDetailByUserID({
+        user_id: user.id,
+        limit: 50,
+        page: 1
       });
       
-      if (response.data) {
-        if (page === 1) {
-          setConversations(response.data as ConversationResponseModel[]);
-        } else {
-          setConversations(prev => [...prev, ...(response.data as ConversationResponseModel[])]);
-        }
+      if (conversationDetailsResponse.data && Array.isArray(conversationDetailsResponse.data)) {
+        // Extract conversation IDs
+        const conversationDetails = conversationDetailsResponse.data as any[];
+        const conversationIds = conversationDetails.map(detail => detail.conversation_id).filter(Boolean);
         
-        // Check if we've reached the end of the conversations
-        if ((response.data as ConversationResponseModel[]).length < limit) {
+        // If we have conversation IDs, fetch each conversation's full details
+        if (conversationIds.length > 0) {
+          const conversationsData: ConversationResponseModel[] = [];
+          
+          // Get full details for each conversation
+          for (const conversationId of conversationIds) {
+            try {
+              const conversationResponse = await defaultMessagesRepo.getConversationById({
+                conversation_id: conversationId
+              });
+              
+              if (conversationResponse.data) {
+                conversationsData.push(conversationResponse.data as ConversationResponseModel);
+              }
+            } catch (err) {
+              console.error(`Error fetching conversation ${conversationId}:`, err);
+            }
+          }
+          
+          // Sort conversations by most recent (we'll need to add lastMessageTimestamp to the model)
+          const sortedConversations = [...conversationsData].sort((a, b) => {
+            const dateA = new Date(a.updated_at || a.created_at || "").getTime();
+            const dateB = new Date(b.updated_at || b.created_at || "").getTime();
+            return dateB - dateA; // Sort by most recent first
+          });
+          
+          if (page === 1) {
+            setConversations(sortedConversations);
+          } else {
+            setConversations(prev => [...prev, ...sortedConversations]);
+          }
+          
+          // Check if we've reached the end of the conversations
+          setIsConversationsEnd(true); // Since we're fetching all at once
+          setConversationPage(page);
+        } else {
+          // No conversations found
+          setConversations([]);
           setIsConversationsEnd(true);
         }
-        
-        setConversationPage(page);
       }
     } catch (error) {
       console.error("Error fetching conversations:", error);
-      message.error(localStrings.Public.ErrorFetchingConversations);
+      message.error(localStrings.Public.ErrorFetchingConversations || "Error fetching conversations");
     } finally {
       setConversationsLoading(false);
     }
-  }, [conversationsLoading, isConversationsEnd, localStrings.Public.ErrorFetchingConversations]);
+  }, [user?.id, conversationsLoading, isConversationsEnd, localStrings.Public.ErrorFetchingConversations]);
 
   // Load more conversations
   const loadMoreConversations = useCallback(() => {
@@ -112,7 +170,12 @@ export const useMessagesViewModel = () => {
 
   // Fetch messages for a conversation
   const fetchMessages = useCallback(async (conversationId: string, page = 1, limit = 20) => {
-    if (messagesLoading || (page > 1 && isMessagesEnd)) return;
+    if (!conversationId || messagesLoading || (page > 1 && isMessagesEnd)) return;
+    
+    // Reset messages when changing conversations
+    if (page === 1) {
+      setMessages([]);
+    }
     
     setMessagesLoading(true);
     try {
@@ -123,7 +186,9 @@ export const useMessagesViewModel = () => {
       });
       
       if (response.data) {
-        let fetchedMessages = response.data as MessageResponseModel[];
+        let fetchedMessages = Array.isArray(response.data) 
+          ? response.data as MessageResponseModel[]
+          : [response.data] as MessageResponseModel[];
         
         // Sort messages by created_at
         fetchedMessages = fetchedMessages.sort((a, b) => {
@@ -145,10 +210,16 @@ export const useMessagesViewModel = () => {
         }
         
         setMessagePage(page);
+      } else {
+        // If no messages are found, set an empty array
+        if (page === 1) {
+          setMessages([]);
+        }
+        setIsMessagesEnd(true);
       }
     } catch (error) {
       console.error("Error fetching messages:", error);
-      message.error(localStrings.Public.ErrorFetchingMessages);
+      message.error(localStrings.Public.ErrorFetchingMessages || "Error fetching messages");
     } finally {
       setMessagesLoading(false);
     }
@@ -219,6 +290,11 @@ export const useMessagesViewModel = () => {
 
   // Create a new conversation
   const createConversation = useCallback(async (name: string, image?: string) => {
+    if (!user?.id) {
+      message.error(localStrings.Public.LoginRequired || "You need to be logged in");
+      return;
+    }
+    
     try {
       const response = await defaultMessagesRepo.createConversation({
         name,
@@ -226,22 +302,35 @@ export const useMessagesViewModel = () => {
       });
       
       if (response.data) {
-        // Add the new conversation to the list
-        setConversations(prev => [response.data as ConversationResponseModel, ...prev]);
+        const newConversation = response.data as ConversationResponseModel;
         
-        // Set it as the current conversation
-        setCurrentConversation(response.data as ConversationResponseModel);
-        
-        // Fetch messages for the new conversation
-        fetchMessages((response.data as ConversationResponseModel).id!);
-        
-        return response.data;
+        // Add the current user to the conversation first (so they can see the conversation)
+        try {
+          await defaultMessagesRepo.createConversationDetail({
+            conversation_id: newConversation.id,
+            user_id: user.id
+          });
+          
+          // Add the new conversation to the list
+          setConversations(prev => [newConversation, ...prev]);
+          
+          // Set it as the current conversation
+          setCurrentConversation(newConversation);
+          
+          // Fetch messages for the new conversation (which will be empty initially)
+          fetchMessages(newConversation.id!);
+          
+          return newConversation;
+        } catch (error) {
+          console.error("Error adding current user to conversation:", error);
+          message.error(localStrings.Public.ErrorCreatingConversation || "Error creating conversation");
+        }
       }
     } catch (error) {
       console.error("Error creating conversation:", error);
-      message.error(localStrings.Public.ErrorCreatingConversation);
+      message.error(localStrings.Public.ErrorCreatingConversation || "Error creating conversation");
     }
-  }, [fetchMessages, localStrings.Public.ErrorCreatingConversation]);
+  }, [user?.id, fetchMessages, localStrings.Public.ErrorCreatingConversation]);
 
   // Delete a message
   const deleteMessage = useCallback(async (messageId: string) => {
