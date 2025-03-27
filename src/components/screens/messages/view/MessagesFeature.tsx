@@ -64,15 +64,28 @@ const MessagesFeature: React.FC = () => {
 
   // Scroll to bottom when messages change
   useEffect(() => {
-    if (messageListRef.current) {
-      messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
+    if (messageListRef.current && messages.length > 0) {
+      // Only auto-scroll if we're at or very near the bottom already
+      const { scrollTop, scrollHeight, clientHeight } = messageListRef.current;
+      const isNearBottom = scrollTop + clientHeight >= scrollHeight - 100;
+      
+      if (isNearBottom) {
+        messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
+      }
     }
   }, [messages]);
 
   // Load initial conversations
   useEffect(() => {
-    fetchConversations();
-  }, [fetchConversations]);
+    if (user?.id) {
+      // Thêm timeout nhỏ để đảm bảo không gọi quá nhanh sau khi component mount
+      const timer = setTimeout(() => {
+        fetchConversations();
+      }, 100);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [user?.id, fetchConversations]);
 
   // Handle message send
   const handleSendMessage = () => {
@@ -88,10 +101,22 @@ const MessagesFeature: React.FC = () => {
     }
   };
 
-  // Handle selecting a conversation
+  // Handle selecting a conversation with debounce
   const handleSelectConversation = (conversation: ConversationResponseModel) => {
+    // Nếu đã chọn conversation này rồi, không làm gì cả
+    if (currentConversation?.id === conversation.id) {
+      return;
+    }
+    
+    // Nếu cuộc trò chuyện mới
     setCurrentConversation(conversation);
-    fetchMessages(conversation.id!);
+    
+    // Thêm timeout nhỏ để tránh gọi API quá nhanh và liên tục
+    if (conversation.id) {
+      setTimeout(() => {
+        fetchMessages(conversation.id!);
+      }, 100);
+    }
   };
 
   // Back button for mobile view
