@@ -362,7 +362,7 @@ const MessagesFeature = () => {
               {message.text || message.content}
               {isPending && (
                 <span className="text-xs opacity-70 ml-1">
-                  {isOwnMessage ? '' : ''}
+                  {isOwnMessage ? '(sending...)' : ''}
                 </span>
               )}
             </div>
