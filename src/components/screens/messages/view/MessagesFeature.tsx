@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/context/auth/useAuth";
 import { useMessagesViewModel } from "../viewModel/MessagesViewModel";
 import { Avatar, Button, Empty, Input, Layout, List, Skeleton, Spin, Typography, message } from "antd";
@@ -18,6 +18,7 @@ const { Text, Title } = Typography;
 const MessagesFeature: React.FC = () => {
   const { user, localStrings } = useAuth();
   const {
+    deleteMessage,
     createConversation,
     conversations,
     currentConversation,
@@ -78,12 +79,19 @@ const MessagesFeature: React.FC = () => {
   // Load initial conversations
   useEffect(() => {
     if (user?.id) {
-      // Thêm timeout nhỏ để đảm bảo không gọi quá nhanh sau khi component mount
-      const timer = setTimeout(() => {
-        fetchConversations();
-      }, 100);
-      
-      return () => clearTimeout(timer);
+      // Thêm requestIdleCallback để đảm bảo chỉ gọi khi browser idle
+      if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(() => {
+          fetchConversations();
+        });
+      } else {
+        // Fallback cho browser không hỗ trợ requestIdleCallback
+        const timer = setTimeout(() => {
+          fetchConversations();
+        }, 300);
+        
+        return () => clearTimeout(timer);
+      }
     }
   }, [user?.id, fetchConversations]);
 
@@ -102,22 +110,47 @@ const MessagesFeature: React.FC = () => {
   };
 
   // Handle selecting a conversation with debounce
-  const handleSelectConversation = (conversation: ConversationResponseModel) => {
-    // Nếu đã chọn conversation này rồi, không làm gì cả
-    if (currentConversation?.id === conversation.id) {
-      return;
-    }
+  const handleSelectConversationRef = useRef<(conversation: ConversationResponseModel) => void>();
+  
+  // Sử dụng useRef để lưu trữ hàm xử lý chọn conversation
+  useEffect(() => {
+    // Lưu lại conversationId hiện tại để tránh gọi API cho conversation đã chọn
+    let currentSelectedId = currentConversation?.id;
     
-    // Nếu cuộc trò chuyện mới
-    setCurrentConversation(conversation);
+    // Throttle việc chọn conversation để tránh gọi API liên tục
+    let lastCallTime = 0;
+    const throttleTime = 1000; // ms
     
-    // Thêm timeout nhỏ để tránh gọi API quá nhanh và liên tục
-    if (conversation.id) {
-      setTimeout(() => {
-        fetchMessages(conversation.id!);
-      }, 100);
+    handleSelectConversationRef.current = (conversation: ConversationResponseModel) => {
+      // Nếu là conversation hiện tại, không làm gì
+      if (conversation.id === currentSelectedId) {
+        return;
+      }
+      
+      // Cập nhật ID đã chọn
+      currentSelectedId = conversation.id;
+      setCurrentConversation(conversation);
+      
+      // Throttle để tránh gọi API quá thường xuyên
+      const now = Date.now();
+      if (now - lastCallTime > throttleTime) {
+        lastCallTime = now;
+        
+        if (conversation.id) {
+          // Sử dụng setTimeout để trì hoãn việc gọi API
+          setTimeout(() => {
+            fetchMessages(conversation.id!);
+          }, 300);
+        }
+      }
+    };
+  }, [currentConversation?.id, fetchMessages]);
+  
+  const handleSelectConversation = useCallback((conversation: ConversationResponseModel) => {
+    if (handleSelectConversationRef.current) {
+      handleSelectConversationRef.current(conversation);
     }
-  };
+  }, []);
 
   // Back button for mobile view
   const handleBackToConversations = () => {

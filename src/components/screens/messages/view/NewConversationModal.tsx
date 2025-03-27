@@ -99,17 +99,8 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
           }
         }
         
-        // Add current user to the conversation
-        if (user?.id) {
-          try {
-            await defaultMessagesRepo.createConversationDetail({
-              conversation_id: newConversation.id,
-              user_id: user.id
-            });
-          } catch (error) {
-            console.error("Error adding current user to conversation:", error);
-          }
-        }
+        // Note: Current user is now added to the conversation in the createConversation function
+        // to ensure they always see their own conversations
         
         // Reset form
         form.resetFields();
