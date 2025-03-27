@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { Avatar, Dropdown, Menu, Popconfirm } from "antd";
-import { EllipsisOutlined, DeleteOutlined, LikeOutlined } from "@ant-design/icons";
+import { Avatar, Dropdown, Popconfirm } from "antd";
+import { EllipsisOutlined, DeleteOutlined } from "@ant-design/icons";
 import { MessageResponseModel } from "@/api/features/messages/models/MessageModel";
 import { useAuth } from "@/context/auth/useAuth";
 import useColor from "@/hooks/useColor";
@@ -81,7 +81,8 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, onDelete }) => {
           borderRadius: 12,
           background: isMyMessage ? brandPrimary : lightGray,
           color: isMyMessage ? "#fff" : "inherit",
-          position: "relative"
+          position: "relative",
+          border: message.fromServer ? "none" : "1px solid rgba(0,0,0,0.1)"
         }}
       >
         {!isMyMessage && (
@@ -96,9 +97,30 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, onDelete }) => {
         
         <div style={{ fontSize: 10, textAlign: "right", marginTop: 4, opacity: 0.7 }}>
           {message.isTemporary ? (
-            <span>{localStrings.Public.Sending || "Sending..."}</span>
+            <span style={{ color: isMyMessage ? "rgba(255, 255, 255, 0.7)" : "inherit" }}>
+              <small>
+                {localStrings.Public.Sending || "Sending..."}
+              </small>
+            </span>
           ) : (
-            formatMessageTime(message.created_at || '')
+            <span style={{ 
+              color: isMyMessage ? "rgba(255, 255, 255, 0.7)" : "inherit",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "flex-end"
+            }}>
+              {message.fromServer && (
+                <span style={{ 
+                  width: 6, 
+                  height: 6, 
+                  borderRadius: "50%", 
+                  backgroundColor: "#4CAF50",
+                  display: "inline-block",
+                  marginRight: 4
+                }} />
+              )}
+              {formatMessageTime(message.created_at || '')}
+            </span>
           )}
         </div>
       </div>

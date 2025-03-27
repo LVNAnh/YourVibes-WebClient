@@ -140,10 +140,34 @@ export const useMessagesViewModel = () => {
           });
           
           if (page === 1) {
-            setMessages(fetchedMessages);
+            // Thêm property để đánh dấu tin nhắn từ server
+            const markedMessages = fetchedMessages.map(msg => ({
+              ...msg,
+              fromServer: true
+            }));
+            
+            setMessages(markedMessages);
           } else {
-            // When loading older messages (pagination), add them to the beginning
-            setMessages(prev => [...fetchedMessages, ...prev]);
+            // Merge với tin nhắn hiện có, đảm bảo không có trùng lặp
+            setMessages(prev => {
+              // Tập hợp ID tin nhắn hiện có
+              const existingIds = new Set(prev.map(msg => msg.id));
+              
+              // Lọc tin nhắn chưa có trong danh sách
+              const newMessages = fetchedMessages.filter(msg => !existingIds.has(msg.id))
+                .map(msg => ({
+                  ...msg,
+                  fromServer: true
+                }));
+              
+              // Kết hợp tin nhắn mới với tin nhắn hiện có
+              const mergedMessages = [...newMessages, ...prev];
+              
+              // Sắp xếp lại theo thời gian
+              return mergedMessages.sort((a, b) => {
+                return new Date(a.created_at || "").getTime() - new Date(b.created_at || "").getTime();
+              });
+            });
           }
           
           // Check if we've reached the end of the messages
@@ -211,23 +235,49 @@ export const useMessagesViewModel = () => {
           // Tạo reference đến real message từ API
           const realMessage = response.data as MessageResponseModel;
           
-          // Lưu trữ mapping giữa tempId và realMessage.id để sử dụng sau này
-          // khi cần xác định message nào là tin nhắn tạm thời
-          const tempToRealIdMap = new Map();
-          tempToRealIdMap.set(tempId, realMessage.id);
+          // Thêm thuộc tính fromServer vào tin nhắn thật
+          const serverMessage = {
+            ...realMessage,
+            fromServer: true,
+            isTemporary: false
+          };
           
           // Replace temporary message with the real one
           setMessages(prev => 
             prev.map(msg => 
-              msg.id === tempId ? { ...realMessage, isTemporary: false } : msg
+              msg.id === tempId ? serverMessage : msg
             )
           );
           
           // Thành công, không còn cần hiển thị "đang gửi"
-          console.log("Message sent successfully:", realMessage);
+          console.log("Message sent successfully:", serverMessage);
           
-          // Không cần fetch lại messages ngay lập tức vì đã cập nhật UI
-          // Người nhận sẽ nhận tin nhắn qua WebSocket
+          // Cập nhật thứ tự conversation
+          setConversations(prev => {
+            const conversationIndex = prev.findIndex(c => c.id === conversationId);
+            if (conversationIndex < 0) return prev;
+            
+            const updatedConversations = [...prev];
+            const conversation = { ...updatedConversations[conversationIndex] };
+            
+            // Cập nhật thời gian
+            conversation.updated_at = new Date().toISOString();
+            
+            // Xóa conversation tại vị trí cũ
+            updatedConversations.splice(conversationIndex, 1);
+            
+            // Thêm vào đầu danh sách
+            updatedConversations.unshift(conversation);
+            
+            return updatedConversations;
+          });
+          
+          // Sau 10 giây, force refresh để đảm bảo tin nhắn được lưu trữ đúng
+          setTimeout(() => {
+            if (currentConversation?.id === conversationId) {
+              stableActions.current.fetchMessages(conversationId, 1, 50);
+            }
+          }, 10000);
         }
       } catch (error) {
         console.error("Error sending message:", error);
@@ -235,6 +285,14 @@ export const useMessagesViewModel = () => {
         
         // Remove the temporary message on error
         setMessages(prev => prev.filter(msg => msg.id !== tempId));
+        
+        // Cố gắng gửi lại sau 2 giây nếu có lỗi network
+        setTimeout(() => {
+          if (navigator.onLine) {
+            console.log("Retrying to send message...");
+            stableActions.current.sendMessage(content, conversationId);
+          }
+        }, 2000);
       }
     },
     
@@ -317,7 +375,7 @@ export const useMessagesViewModel = () => {
     }
   });
 
-  // Connect to WebSocket khi user thay đổi
+  // Connect to WebSocket khi user thay đổi - Loại bỏ phụ thuộc vào currentConversation?.id
   useEffect(() => {
     if (!user?.id) return;
     
@@ -333,14 +391,47 @@ export const useMessagesViewModel = () => {
       console.log("Connecting to WebSocket:", wsUrl);
       const ws = new WebSocket(wsUrl);
       
+      let pingInterval: ReturnType<typeof setInterval> | null = null;
+      
       ws.onopen = () => {
         console.log("WebSocket connection established successfully");
+        
+        // Cơ chế ping-pong để giữ kết nối sống và kiểm tra sự gián đoạn
+        pingInterval = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            // Send ping message to keep the connection alive
+            try {
+              ws.send(JSON.stringify({ type: "ping" }));
+            } catch (err) {
+              console.error("Error sending ping:", err);
+            }
+          } else {
+            // WebSocket is not open, try to reconnect
+            if (pingInterval) {
+              clearInterval(pingInterval);
+              // Attempt to reconnect
+              console.log("WebSocket connection lost, attempting to reconnect...");
+              try {
+                ws.close();
+                // Create new instance in the onclose handler
+              } catch (err) {
+                console.error("Error closing broken WebSocket:", err);
+              }
+            }
+          }
+        }, 30000); // Check every 30 seconds
       };
       
       ws.onmessage = (event) => {
         try {
           // Log raw message để debug
           console.log("WebSocket raw message:", event.data);
+          
+          // Kiểm tra nếu là tin nhắn pong
+          if (event.data === "pong" || event.data.includes("pong")) {
+            console.log("Received pong from server");
+            return;
+          }
           
           // Parse JSON message
           const newMessage = JSON.parse(event.data);
@@ -358,13 +449,16 @@ export const useMessagesViewModel = () => {
             return;
           }
           
-          // If the message is for the current conversation, add it to the messages
-          if (currentConversation && newMessage.conversation_id === currentConversation.id) {
+          // Kiểm tra nếu message này là cho conversation hiện tại
+          // Không sử dụng closure capture cho currentConversation (để tránh stale closure)
+          const currentConvId = currentConversation?.id;
+          
+          if (currentConvId && newMessage.conversation_id === currentConvId) {
             console.log("Adding new message to current conversation:", newMessage);
             
             // Kiểm tra xem message đã tồn tại trong danh sách chưa
             setMessages(prev => {
-              // Nếu message này đã tồn tại (có thể là tin nhắn tạm thời), không thêm vào nữa
+              // Nếu message này đã tồn tại (có thể là tin nhắn tạm thời hoặc đã có), không thêm vào nữa
               const messageExists = prev.some(msg => 
                 (msg.id === newMessage.id) || 
                 (msg.content === newMessage.content && 
@@ -379,12 +473,26 @@ export const useMessagesViewModel = () => {
               }
               
               console.log("Adding new message to list");
-              return [...prev, newMessage];
+              
+              // Thêm message mới vào cuối danh sách
+              const newMessages = [...prev, newMessage];
+              
+              // Sắp xếp lại tin nhắn theo thời gian để đảm bảo thứ tự đúng
+              return newMessages.sort((a, b) => {
+                return new Date(a.created_at || "").getTime() - new Date(b.created_at || "").getTime();
+              });
             });
+            
+            // Force refresh messages after a short delay to ensure consistency
+            setTimeout(() => {
+              if (currentConversation?.id === newMessage.conversation_id) {
+                console.log("Syncing messages for conversation after receiving new message");
+                // Sử dụng page 1 và limit lớn hơn để lấy đủ tin nhắn
+                stableActions.current.fetchMessages(newMessage.conversation_id, 1, 50);
+              }
+            }, 1000);
           } else {
-            console.log("Message is for another conversation:", 
-                       newMessage.conversation_id, 
-                       "current:", currentConversation?.id);
+            console.log("Message is for another conversation");
           }
           
           // Update conversation list without re-fetching
@@ -427,6 +535,12 @@ export const useMessagesViewModel = () => {
       ws.onclose = (event) => {
         console.log("WebSocket connection closed", event.code, event.reason);
         
+        // Clear ping interval if it exists
+        if (pingInterval) {
+          clearInterval(pingInterval);
+          pingInterval = null;
+        }
+        
         // Attempt to reconnect after 5 seconds if not closed intentionally
         if (event.code !== 1000) {
           console.log("Attempting to reconnect WebSocket in 5 seconds...");
@@ -455,6 +569,10 @@ export const useMessagesViewModel = () => {
       
       // Clean up WebSocket connection on unmount
       return () => {
+        if (pingInterval) {
+          clearInterval(pingInterval);
+        }
+        
         if (socketRef.current) {
           // Use 1000 code to indicate clean close
           socketRef.current.close(1000, "Component unmounting");
@@ -464,7 +582,27 @@ export const useMessagesViewModel = () => {
     } catch (error) {
       console.error("Error creating WebSocket connection:", error);
     }
-  }, [user?.id, currentConversation?.id]);
+  }, [user?.id]); // Chỉ phụ thuộc vào user?.id để tránh stale closures
+
+  // Cơ chế tự động đồng bộ tin nhắn nếu conversation active
+  useEffect(() => {
+    if (!currentConversation?.id) return;
+    
+    // Khi conversation thay đổi, load tin nhắn mới một lần
+    stableActions.current.fetchMessages(currentConversation.id);
+    
+    // Cài đặt interval cho việc đồng bộ định kỳ
+    const syncInterval = setInterval(() => {
+      if (currentConversation?.id) {
+        console.log("Auto-syncing messages for active conversation");
+        stableActions.current.fetchMessages(currentConversation.id, 1, 50);
+      }
+    }, 15000); // Sync every 15 seconds
+    
+    return () => {
+      clearInterval(syncInterval);
+    };
+  }, [currentConversation?.id]);
 
   // Memoize API functions để đảm bảo tham chiếu cố định
   const fetchConversations = useCallback((page = 1) => {

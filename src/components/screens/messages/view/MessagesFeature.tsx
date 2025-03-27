@@ -95,6 +95,42 @@ const MessagesFeature: React.FC = () => {
     }
   }, [user?.id, fetchConversations]);
 
+  // Auto-refresh mechanism to prevent message loss
+  useEffect(() => {
+    if (!currentConversation?.id) return;
+    
+    // Refresh messages when conversation changes
+    const initialTimer = setTimeout(() => {
+      if (currentConversation?.id) {
+        fetchMessages(currentConversation.id, 1, 50);
+      }
+    }, 300);
+    
+    // Periodic refresh for long-lived conversation views
+    const refreshInterval = setInterval(() => {
+      if (currentConversation?.id && document.visibilityState === 'visible') {
+        console.log("Auto-refreshing messages for conversation:", currentConversation.id);
+        fetchMessages(currentConversation.id, 1, 50);
+      }
+    }, 30000); // Refresh every 30 seconds if tab is visible
+    
+    // Listen for visibility changes to refresh when tab becomes visible again
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && currentConversation?.id) {
+        console.log("Tab became visible, refreshing messages");
+        fetchMessages(currentConversation.id, 1, 50);
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(refreshInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [currentConversation?.id, fetchMessages]);
+
   // Handle message send
   const handleSendMessage = () => {
     if (messageText.trim() && currentConversation) {
@@ -144,7 +180,7 @@ const MessagesFeature: React.FC = () => {
         }
       }
     };
-  }, [currentConversation?.id, fetchMessages]);
+  }, [currentConversation?.id, fetchMessages, setCurrentConversation]);
   
   const handleSelectConversation = useCallback((conversation: ConversationResponseModel) => {
     if (handleSelectConversationRef.current) {
@@ -339,6 +375,7 @@ const MessagesFeature: React.FC = () => {
               display: "flex",
               flexDirection: "column",
               height: "calc(100% - 128px)",
+              position: "relative"
             }}
             ref={messageListRef}
           >
@@ -358,13 +395,32 @@ const MessagesFeature: React.FC = () => {
                   )}
                   <div style={{ flex: 1 }}>
                     {messages.length > 0 ? (
-                      messages.map((msg: MessageResponseModel) => (
-                        <MessageItem 
-                          key={msg.id} 
-                          message={msg} 
-                          onDelete={deleteMessage}
-                        />
-                      ))
+                      <>
+                        {/* Network indicator */}
+                        <div style={{
+                          position: "absolute",
+                          top: 0,
+                          right: 16,
+                          padding: "4px 8px",
+                          borderRadius: "0 0 4px 4px",
+                          backgroundColor: navigator.onLine ? "#4CAF50" : "#F44336",
+                          color: "white",
+                          fontSize: 12,
+                          opacity: 0.8,
+                          zIndex: 1
+                        }}>
+                          {navigator.onLine ? "Online" : "Offline"}
+                        </div>
+                        
+                        {/* Message list */}
+                        {messages.map((msg: MessageResponseModel) => (
+                          <MessageItem 
+                            key={msg.id} 
+                            message={msg} 
+                            onDelete={deleteMessage}
+                          />
+                        ))}
+                      </>
                     ) : (
                       <Empty
                         description={localStrings.Public.NoMessages || "No messages yet"}
