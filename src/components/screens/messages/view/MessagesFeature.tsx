@@ -12,7 +12,10 @@ import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { IoMdArrowBack } from "react-icons/io";
 import { useConversationViewModel } from '@/components/screens/messages/viewModel/components/ConversationViewModel';
-import StaticConversationMessages from './StaticConversationMessages'; // Import the class component for message display
+import { MessageResponseModel } from '@/api/features/messages/models/MessageModel';
+import { BiReply } from 'react-icons/bi';
+import { AiOutlineDelete, AiOutlineMore } from 'react-icons/ai';
+import { Popover } from 'antd';
 
 const MessagesFeature = () => {
   const { user, localStrings } = useAuth();
@@ -38,8 +41,11 @@ const MessagesFeature = () => {
     isProfileModalOpen,
     handleSendMessage,
     isConnected,
+    deleteMessage,
     isLoadingMessages,
     forceUpdateTempMessages,
+    typingUsers,
+    sendTypingIndicator
   } = useMessageViewModel();
 
   // Conversation view model
@@ -58,20 +64,24 @@ const MessagesFeature = () => {
     isCreatingGroup,
     groupError,
     handleGroupCreation,
+    selectedFriends,
+    setSelectedFriends,
+    availableFriends,
+    setAvailableFriends,
+    toggleFriendSelection
   } = useGroupConversationManager();
 
   // UI state
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [groupSearch, setGroupSearch] = useState("");
-  const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
   const [conversationSearchText, setConversationSearchText] = useState("");
   const [showGroupCreationError, setShowGroupCreationError] = useState(false);
   
-  // Force a stable key for StaticConversationMessages to prevent re-mounting
-  const convContainerKey = useRef(`conv-container-${Date.now()}`);
+  // Throttled typing indicator
+  const lastTypingRef = useRef<number>(0);
   
   // Load conversations when the component mounts
   useEffect(() => {
@@ -151,6 +161,15 @@ const MessagesFeature = () => {
     return () => clearTimeout(timeoutId);
   }, [activeConversationId, fetchMessages]);
 
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    if (activeConversationId && messages[activeConversationId]?.length) {
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    }
+  }, [activeConversationId, messages]);
+
   const onEmojiClick = useCallback((emojiData: EmojiClickData) => {
     setNewMessage(prev => prev + emojiData.emoji);
     setShowEmojiPicker(false);
@@ -169,6 +188,20 @@ const MessagesFeature = () => {
       sendChatMessage();
     }
   }, [newMessage, activeConversation, localStrings]);
+  
+  // Handle input change with typing indicator
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setNewMessage(e.target.value);
+    
+    // Send typing indicator, but throttle to prevent too many messages
+    if (activeConversationId) {
+      const now = Date.now();
+      if (now - lastTypingRef.current > 2000) { // Send at most every 2 seconds
+        sendTypingIndicator(activeConversationId);
+        lastTypingRef.current = now;
+      }
+    }
+  }, [activeConversationId, sendTypingIndicator]);
   
   const sendChatMessage = useCallback(() => {
     if (!newMessage.trim() || !activeConversation || !activeConversationId) return;
@@ -213,12 +246,15 @@ const MessagesFeature = () => {
       return;
     }
 
-    const allMembers = [user.id, ...selectedFriends];
+    const friendIds = selectedFriends.map(f => f.id);
      
     setShowGroupModal(false);
     
-    router.push(`/messages?members=${allMembers.join(',')}`);
-  }, [selectedFriends, user, router, localStrings]);
+    const newConversation = await handleGroupCreation();
+    if (newConversation && newConversation.id) {
+      router.push(`/messages?conversation=${newConversation.id}`);
+    }
+  }, [selectedFriends, user, router, localStrings, handleGroupCreation]);
 
   // Handle conversation selection - CRITICAL FUNCTION - with mutex protection
   const handleSelectConversation = useCallback((conversation: ConversationWithMembers) => {
@@ -232,6 +268,11 @@ const MessagesFeature = () => {
     
     // First set the active conversation object
     setActiveConversation(conversation);
+    
+    // Set active conversation ID
+    if (conversation.id) {
+      setActiveConversationId(conversation.id);
+    }
     
     // Wait for state to update before fetching messages
     setTimeout(() => {
@@ -249,7 +290,14 @@ const MessagesFeature = () => {
     if (window.innerWidth < 768) {
       setShowSidebar(false);
     }
-  }, [setActiveConversation, fetchMessages]);
+  }, [setActiveConversation, setActiveConversationId, fetchMessages]);
+  
+  // Handle delete message
+  const handleDeleteMessage = useCallback((messageId: string) => {
+    if (!activeConversationId) return;
+    
+    deleteMessage(messageId, activeConversationId);
+  }, [activeConversationId, deleteMessage]);
 
   const filteredConversations = conversations.filter((conversation) => {
     const conversationName = conversation.name?.toLowerCase() || "";
@@ -257,12 +305,109 @@ const MessagesFeature = () => {
   });
   
   // Get the current messages for the active conversation
-  // Make sure we don't try to access a non-existent property
   const currentMessages = (
     activeConversationId && 
     messages && 
     messages[activeConversationId]
   ) ? messages[activeConversationId] : [];
+  
+  // Format message time
+  const formatMessageTime = (dateString?: string) => {
+    if (!dateString) return "";
+    const date = new Date(dateString);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  // Render message component
+  const renderMessage = (message: MessageResponseModel) => {
+    const isOwnMessage = message.user_id === user?.id;
+    const isPending = message.isTemporary;
+    
+    return (
+      <div 
+        key={message.id} 
+        className={`flex my-2 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
+      >
+        {!isOwnMessage && (
+          <img 
+            src={message.user?.avatar_url || "http://localhost:8080/v1/2024/media/f8081529-2d0f-4107-803c-d0299ac30684.png"} 
+            alt={`${message.user?.name || "User"}'s avatar`} 
+            className="w-8 h-8 rounded-full mr-2 self-end"
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = "http://localhost:8080/v1/2024/media/f8081529-2d0f-4107-803c-d0299ac30684.png";
+            }}
+          />
+        )}
+        
+        <div className="flex flex-col max-w-[70%]">
+          {/* Reply indicator */}
+          {message.reply_to && (
+            <div className={`text-xs ${isOwnMessage ? 'self-end mr-2' : 'self-start ml-2'} bg-gray-100 p-1 rounded mb-1 text-gray-600`}>
+              <div className="flex items-center">
+                <BiReply className="mr-1" />
+                <span className="truncate max-w-[150px]">
+                  {message.reply_to.text || message.reply_to.content}
+                </span>
+              </div>
+            </div>
+          )}
+          
+          <div className={`relative rounded-lg p-2 ${
+            isOwnMessage 
+              ? 'bg-blue-500 text-white self-end' 
+              : 'bg-gray-200 text-gray-800 self-start'
+          }`}>
+            {/* Message content */}
+            <div className="break-words">
+              {message.text || message.content}
+              {isPending && (
+                <span className="text-xs opacity-70 ml-1">
+                  {isOwnMessage ? '' : ''}
+                </span>
+              )}
+            </div>
+            
+            {/* Time */}
+            <div className={`text-xs mt-1 ${isOwnMessage ? 'text-blue-100' : 'text-gray-500'}`}>
+              {formatMessageTime(message.created_at)}
+            </div>
+          </div>
+        </div>
+        
+        {/* Message actions */}
+        {isOwnMessage && !isPending && (
+          <Popover
+            content={
+              <div className="flex flex-col">
+                <button 
+                  onClick={() => handleDeleteMessage(message.id || '')}
+                  className="text-left px-2 py-1 hover:bg-red-50 text-red-500"
+                >
+                  <AiOutlineDelete className="inline mr-1" />
+                  {localStrings.PostDetails?.DeleteComment || "Delete"}
+                </button>
+              </div>
+            }
+            trigger="click"
+            placement="left"
+          >
+            <button className="self-start ml-1 p-1 text-gray-500 hover:text-gray-700">
+              <AiOutlineMore />
+            </button>
+          </Popover>
+        )}
+        
+        {!isOwnMessage && !isPending && (
+          <button 
+            onClick={() => setReplyTo(message)}
+            className="self-end ml-1 p-1 text-gray-500 hover:text-gray-700"
+          >
+            <BiReply />
+          </button>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="flex flex-col md:flex-row h-[85vh] p-2 md:p-4 relative">
@@ -320,8 +465,8 @@ const MessagesFeature = () => {
                 );
                 
                 const firstMember = otherMembers && otherMembers.length > 0 ? otherMembers[0].user : null;
-                const avatarUrl = isGroup ? (conversation.image || "https://via.placeholder.com/40") : 
-                  (firstMember?.avatar_url || "https://via.placeholder.com/40");
+                const avatarUrl = isGroup ? (conversation.image || "http://localhost:8080/v1/2024/media/f8081529-2d0f-4107-803c-d0299ac30684.png") : 
+                  (firstMember?.avatar_url || "http://localhost:8080/v1/2024/media/f8081529-2d0f-4107-803c-d0299ac30684.png");
                 
                 return (
                   <li
@@ -334,7 +479,7 @@ const MessagesFeature = () => {
                       alt={`${conversationName}'s avatar`} 
                       className="w-8 h-8 md:w-10 md:h-10 rounded-full mr-2" 
                       onError={(e) => {
-                        (e.target as HTMLImageElement).src = "https://via.placeholder.com/40"; 
+                        (e.target as HTMLImageElement).src = "http://localhost:8080/v1/2024/media/f8081529-2d0f-4107-803c-d0299ac30684.png"; 
                       }}
                     />
                     <div className="flex flex-col overflow-hidden">
@@ -368,11 +513,11 @@ const MessagesFeature = () => {
               </button>
             )}
             <img
-              src={activeConversation.image || "https://via.placeholder.com/64"}
+              src={activeConversation.image || "http://localhost:8080/v1/2024/media/f8081529-2d0f-4107-803c-d0299ac30684.png"}
               alt={activeConversation.name || "Conversation avatar"}
               className="mt-1 md:mt-2 mr-3 ml-1 md:ml-2 w-10 h-10 md:w-16 md:h-16 rounded-full object-cover cursor-pointer"
               onError={(e) => {
-                (e.target as HTMLImageElement).src = "https://via.placeholder.com/64";
+                (e.target as HTMLImageElement).src = "http://localhost:8080/v1/2024/media/f8081529-2d0f-4107-803c-d0299ac30684.png";
               }}
             />
             <div className='grow'>
@@ -404,22 +549,53 @@ const MessagesFeature = () => {
           </div>
         )}
 
-        {/* Conversation Content - Use the class component for message display */}
-        <div
-          className="flex-1 border rounded-lg mb-4 bg-gray-100 h-[64vh] relative"
-          key={convContainerKey.current}
-        >
-          <StaticConversationMessages
-            messages={currentMessages}
-            activeConversationId={activeConversationId}
-            user={user}
-            isLoadingMessages={isLoadingMessages}
-            isCreatingGroup={isCreatingGroup}
-            localStrings={localStrings}
-            setReplyTo={setReplyTo}
-            setShowScrollToBottom={setShowScrollToBottom}
-            showScrollToBottom={showScrollToBottom}
-          />
+        {/* Conversation Content */}
+        <div className="flex-1 border rounded-lg mb-4 bg-gray-100 h-[64vh] relative overflow-y-auto p-3">
+          {/* Loading state */}
+          {activeConversationId && isLoadingMessages && 
+            typeof isLoadingMessages === 'object' && 
+            isLoadingMessages[activeConversationId] ? (
+            <div className="flex justify-center items-center h-full">
+              <div className="animate-pulse text-gray-500">Đang tải tin nhắn...</div>
+            </div>
+          ) : !activeConversation ? (
+            <div className="flex flex-col justify-center items-center h-full">
+              <div className="text-gray-500">
+                {localStrings.Messages.ChooseFriendToChat || "Chọn cuộc trò chuyện để chat"}
+              </div>
+            </div>
+          ) : currentMessages.length === 0 ? (
+            <div className="flex flex-col justify-center items-center h-full">
+              <div className="text-gray-500">
+                {localStrings.Messages.NoMessages || "Chưa có tin nhắn nào"}
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col">
+              {currentMessages.map(renderMessage)}
+              {/* Typing indicator */}
+              {activeConversationId && 
+                typingUsers && 
+                typingUsers[activeConversationId]?.length > 0 && (
+                <div className="flex items-center mt-2 mb-1">
+                  <div className="bg-gray-200 text-gray-700 rounded-lg py-1 px-2">
+                    <div className="flex items-center">
+                      <div className="mr-2 text-xs">
+                        {typingUsers[activeConversationId][0].username} is typing
+                      </div>
+                      <div className="flex space-x-1">
+                        <div className="w-1 h-1 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }}></div>
+                        <div className="w-1 h-1 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "150ms" }}></div>
+                        <div className="w-1 h-1 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "300ms" }}></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {/* End of messages marker */}
+              <div ref={messagesEndRef} className="h-1" />
+            </div>
+          )}
         </div>
         
         {/* Reply bar */}
@@ -464,7 +640,7 @@ const MessagesFeature = () => {
             <input
               type="text"
               value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
+              onChange={handleInputChange}
               onKeyDown={handleKeyDown}
               placeholder={activeConversation ? (localStrings.Messages.EnterMessage || "Nhập tin nhắn") : (localStrings.Messages.ChooseConversationToConnect || "Chọn cuộc hội thoại để kết nối")}
               className="w-full p-2 border rounded-lg outline-none"
@@ -531,6 +707,42 @@ const MessagesFeature = () => {
           >
             {localStrings.Messages.Confirm || "Xác nhận"}
           </button>
+        </div>
+        
+        {/* Friend list for selection */}
+        <div className="mt-4 max-h-60 overflow-y-auto">
+          <h4 className="font-medium mb-2">{localStrings.Messages.Friends || "Bạn bè"}</h4>
+          <ul className="divide-y">
+            {availableFriends.filter(friend => 
+              friend.name?.toLowerCase().includes(groupSearch.toLowerCase()) ||
+              friend.family_name?.toLowerCase().includes(groupSearch.toLowerCase())
+            ).map(friend => (
+              <li 
+                key={friend.id} 
+                className={`flex items-center p-2 cursor-pointer hover:bg-gray-100 ${
+                  selectedFriends.some(f => f.id === friend.id) ? 'bg-blue-50' : ''
+                }`}
+                onClick={() => toggleFriendSelection(friend)}
+              >
+                <img 
+                  src={friend.avatar_url || "https://via.placeholder.com/40"} 
+                  alt={`${friend.name}'s avatar`} 
+                  className="w-8 h-8 rounded-full mr-2"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = "https://via.placeholder.com/40";
+                  }}
+                />
+                <span className="flex-1">{friend.name} {friend.family_name}</span>
+                <span className={`w-5 h-5 rounded-full flex items-center justify-center ml-2 ${
+                  selectedFriends.some(f => f.id === friend.id) 
+                    ? 'bg-blue-500 text-white' 
+                    : 'border border-gray-300'
+                }`}>
+                  {selectedFriends.some(f => f.id === friend.id) && '✓'}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       </Modal>
       

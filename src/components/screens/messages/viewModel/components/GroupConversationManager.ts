@@ -1,244 +1,111 @@
-import { defaultMessagesRepo } from "@/api/features/messages/MessagesRepo";
-import { ConversationDetailResponseModel } from "@/api/features/messages/models/ConversationDetailModel";
-import { FriendResponseModel } from "@/api/features/profile/model/FriendReponseModel";
-import { UserModel } from "@/api/features/authenticate/model/LoginModel";
-import { defaultProfileRepo } from "@/api/features/profile/ProfileRepository";
-import { useAuth } from "@/context/auth/useAuth";
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from 'react';
+import { useAuth } from '@/context/auth/useAuth';
+import { useConversationViewModel } from './ConversationViewModel';
+import { message as antdMessage } from 'antd';
+
+export interface FriendUser {
+  id: string;
+  name: string;
+  family_name?: string;
+  avatar_url?: string;
+}
 
 export const useGroupConversationManager = () => {
   const { user, localStrings } = useAuth();
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const [isCreatingGroup, setIsCreatingGroup] = useState(false);
+  const { createConversation } = useConversationViewModel();
+  
+  const [isCreatingGroup, setIsCreatingGroup] = useState<boolean>(false);
   const [groupError, setGroupError] = useState<string | null>(null);
-  const [conversationMembers, setConversationMembers] = useState<UserModel[]>([]);
-
-  useEffect(() => {
-    const members = searchParams?.get("members");
-    if (members) {
-      handleGroupCreation(members.split(","));
-    }
-  }, [searchParams]);
-
-  const fetchConversationMembers = useCallback(async () => {
-    if (!user?.id) return;
-
-    try {
-      const conversationsRes = await defaultMessagesRepo.getConversations({
-        limit: 100,
-        page: 1
-      });
-
-      if (!conversationsRes.data) return;
-
-      const conversations = Array.isArray(conversationsRes.data) 
-        ? conversationsRes.data 
-        : [conversationsRes.data];
-
-      const uniqueUserIds = new Set<string>();
-
-      for (const conversation of conversations) {
-        if (!conversation.id) continue;
-
-        try {
-          // Use getConversationDetailByUserID instead of getConversationDetailByID
-          const membersRes = await defaultMessagesRepo.getConversationDetailByUserID({
-            conversation_id: conversation.id
-          });
-
-          if (!membersRes.data) continue;
-
-          const members = Array.isArray(membersRes.data) 
-            ? membersRes.data 
-            : [membersRes.data];
-
-          members.forEach(member => {
-            if (member.user_id && member.user_id !== user.id) {
-              uniqueUserIds.add(member.user_id);
-            }
-          });
-        } catch (error) {
-          console.error("Error fetching conversation details:", error);
-        }
+  const [selectedFriends, setSelectedFriends] = useState<FriendUser[]>([]);
+  const [availableFriends, setAvailableFriends] = useState<FriendUser[]>([]);
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  
+  // Reset the group creation state
+  const resetGroupCreation = useCallback(() => {
+    setIsCreatingGroup(false);
+    setGroupError(null);
+    setSelectedFriends([]);
+    setSearchTerm('');
+  }, []);
+  
+  // Toggle friend selection
+  const toggleFriendSelection = useCallback((friend: FriendUser) => {
+    setSelectedFriends(prev => {
+      const isAlreadySelected = prev.some(f => f.id === friend.id);
+      
+      if (isAlreadySelected) {
+        // Remove friend
+        return prev.filter(f => f.id !== friend.id);
+      } else {
+        // Add friend
+        return [...prev, friend];
       }
-
-      const members: UserModel[] = [];
-      for (const userId of uniqueUserIds) {
-        try {
-          const userRes = await defaultProfileRepo.getProfile(userId);
-          if (userRes?.data) {
-            members.push(userRes.data);
-          }
-        } catch (error) {
-          console.error("Error fetching user profile:", error);
-        }
-      }
-
-      setConversationMembers(members);
-    } catch (error) {
-      console.error("Error fetching conversation members:", error);
-    }
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (user?.id) {
-      fetchConversationMembers();
-    }
-  }, [user?.id, fetchConversationMembers]);
-
-  const handleGroupCreation = useCallback(async (memberIds: string[]) => {
+    });
+  }, []);
+  
+  // Handle group creation
+  const handleGroupCreation = useCallback(async (name?: string) => {
     if (!user?.id) {
-      return;
-    }
-
-    if (memberIds.length < 3) {
-      setGroupError(localStrings.Messages.GroupMinimumMembers || "Nhóm chat phải có ít nhất 3 thành viên");
-      return;
-    }
-
-    try {
-      setIsCreatingGroup(true);
-      setGroupError(null);
-
-      const sortedMemberIds = [...memberIds].sort();
-
-      const existingGroupId = await findExistingGroupConversation(sortedMemberIds);
-      
-      if (existingGroupId) {
-        router.push(`/messages?conversation=${existingGroupId}`);
-        return;
-      }
-
-      const conversationId = await createNewGroupConversation(sortedMemberIds);
-      
-      if (conversationId) {
-        router.push(`/messages?conversation=${conversationId}`);
-      } else {
-        setGroupError(localStrings.Messages.GroupCreationFailed || "Không thể tạo nhóm chat");
-      }
-    } catch (error) {
-      console.error("Lỗi khi tạo nhóm chat:", error);
-      setGroupError(localStrings.Messages.GroupCreationFailed || "Không thể tạo nhóm chat");
-    } finally {
-      setIsCreatingGroup(false);
-      
-      const newUrl = pathname;
-      router.replace(newUrl);
-    }
-  }, [user, router, pathname, localStrings]);
-
-  const findExistingGroupConversation = async (memberIds: string[]): Promise<string | null> => {
-    if (!user?.id) return null;
-
-    try {
-      const userConversationsRes = await defaultMessagesRepo.getConversations({
-        limit: 100,
-        page: 1
-      });
-
-      if (!userConversationsRes.data) return null;
-
-      const userConversations = Array.isArray(userConversationsRes.data) 
-        ? userConversationsRes.data 
-        : [userConversationsRes.data];
-
-      for (const conversation of userConversations) {
-        if (!conversation.id) continue;
-
-        // Use getConversationDetailByUserID instead of getConversationDetailByID
-        const membersRes = await defaultMessagesRepo.getConversationDetailByUserID({
-          conversation_id: conversation.id
-        });
-
-        if (!membersRes.data) continue;
-
-        const conversationMembers = Array.isArray(membersRes.data) 
-          ? membersRes.data 
-          : [membersRes.data];
-
-        const memberUserIds = conversationMembers
-          .map(member => member.user_id)
-          .filter(Boolean) as string[];
-
-        const sortedConversationMemberIds = [...memberUserIds].sort();
-
-        if (memberIds.length === sortedConversationMemberIds.length &&
-            JSON.stringify(memberIds) === JSON.stringify(sortedConversationMemberIds)) {
-          return conversation.id;
-        }
-      }
-    } catch (error) {
-      console.error("Error finding existing group conversation:", error);
-    }
-
-    return null;
-  };
-
-  const createNewGroupConversation = async (memberIds: string[]): Promise<string | null> => {
-    if (!user?.id) return null;
-
-    try {
-      let memberNames: string[] = [];
-      for (const id of memberIds) {
-        if (id === user.id) {
-          memberNames.push(`Bạn`);
-          continue;
-        }
-        
-        try {
-          const profileRes = await defaultProfileRepo.getProfile(id);
-          if (profileRes?.data) {
-            memberNames.push(profileRes.data.name || "Người dùng");
-          }
-        } catch (error) {
-          memberNames.push("Người dùng");
-        }
-      }
-
-      let groupName = "";
-      if (memberNames.length <= 3) {
-        groupName = memberNames.join(", ");
-      } else {
-        groupName = `vip`;
-      }
-
-      if (groupName.length > 50) {
-        groupName = groupName.substring(0, 47) + "...";
-      }
-
-      const conversationRes = await defaultMessagesRepo.createConversation({
-        name: groupName
-      });
-
-      if (!conversationRes.data?.id) {
-        throw new Error("Không thể tạo cuộc trò chuyện nhóm");
-      }
-
-      const conversationId = conversationRes.data.id;
-
-      for (const memberId of memberIds) {
-        await defaultMessagesRepo.createConversationDetail({
-          conversation_id: conversationId,
-          user_id: memberId
-        });
-      }
-
-      return conversationId;
-    } catch (error) {
-      console.error("Error creating new group conversation:", error);
+      setGroupError(localStrings.Messages.UserNotLoggedIn || "Please login");
       return null;
     }
-  };
-
+    
+    if (selectedFriends.length < 2) {
+      setGroupError(localStrings.Messages.GroupMinimumMembers || "Group chat must have at least 3 members (including you)");
+      return null;
+    }
+    
+    setIsCreatingGroup(true);
+    
+    try {
+      const userIds = selectedFriends.map(f => f.id);
+      const groupName = name || `${user.name}'s group with ${selectedFriends.map(f => f.name).join(', ')}`;
+      
+      const newConversation = await createConversation(userIds, groupName);
+      
+      if (newConversation) {
+        resetGroupCreation();
+        antdMessage.success("Group created successfully");
+        return newConversation;
+      } else {
+        throw new Error("Failed to create group");
+      }
+    } catch (error) {
+      console.error("Error creating group:", error);
+      setGroupError(localStrings.Messages.GroupCreationFailed || "Failed to create group chat");
+      return null;
+    } finally {
+      setIsCreatingGroup(false);
+    }
+  }, [user, selectedFriends, createConversation, resetGroupCreation, localStrings]);
+  
+  // Filter available friends based on search term
+  const filteredFriends = useCallback(() => {
+    if (!searchTerm.trim()) {
+      return availableFriends;
+    }
+    
+    const term = searchTerm.toLowerCase();
+    return availableFriends.filter(friend => 
+      friend.name.toLowerCase().includes(term) || 
+      (friend.family_name && friend.family_name.toLowerCase().includes(term))
+    );
+  }, [availableFriends, searchTerm]);
+  
   return {
     isCreatingGroup,
+    setIsCreatingGroup,
     groupError,
+    setGroupError,
+    selectedFriends,
+    setSelectedFriends,
+    availableFriends,
+    setAvailableFriends,
+    searchTerm,
+    setSearchTerm,
+    filteredFriends: filteredFriends(),
+    toggleFriendSelection,
     handleGroupCreation,
-    findExistingGroupConversation,
-    conversationMembers,
-    fetchConversationMembers
+    resetGroupCreation,
   };
 };

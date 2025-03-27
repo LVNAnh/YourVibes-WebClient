@@ -1,189 +1,228 @@
+import { useState, useEffect, useCallback, useRef } from "react";
+import { message as antdMessage } from "antd";
+import { useAuth } from "@/context/auth/useAuth";
 import { defaultMessagesRepo } from "@/api/features/messages/MessagesRepo";
 import { ConversationResponseModel } from "@/api/features/messages/models/ConversationModel";
 import { ConversationDetailResponseModel } from "@/api/features/messages/models/ConversationDetailModel";
-import { useAuth } from "@/context/auth/useAuth";
-import { useState, useCallback, useEffect, useRef } from "react";
 
+// Extended conversation type with members
 export interface ConversationWithMembers extends ConversationResponseModel {
   members?: ConversationDetailResponseModel[];
   isGroup?: boolean;
-  unreadCount?: number;
-  lastMessage?: string;
-  lastMessageTime?: string;
 }
 
 export const useConversationViewModel = () => {
-    const { user } = useAuth();
-    // Use useRef to ensure we have a stable reference to the activeConversationId
-    const activeConversationIdRef = useRef<string | null>(null);
-    const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-    const [activeConversation, setActiveConversation] = useState<ConversationWithMembers | null>(null);
-    const [conversations, setConversations] = useState<ConversationWithMembers[]>([]);
-    const [isLoadingConversations, setIsLoadingConversations] = useState(false);
+  const { user, localStrings } = useAuth();
+  const [conversations, setConversations] = useState<ConversationWithMembers[]>([]);
+  const [loadingConversations, setLoadingConversations] = useState<boolean>(false);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [activeConversation, setActiveConversation] = useState<ConversationWithMembers | null>(null);
+  const [conversationError, setConversationError] = useState<string | null>(null);
+  
+  const prevActiveIdRef = useRef<string | null>(null);
 
-    // Ensure the ref stays in sync with the state
-    useEffect(() => {
-        activeConversationIdRef.current = activeConversationId;
-    }, [activeConversationId]);
-
-    const fetchAllConversations = useCallback(async () => {
-        if (!user?.id) return;
-
+  // Fetch all conversations
+  const fetchAllConversations = useCallback(async () => {
+    if (!user?.id) {
+      console.error("Cannot fetch conversations: user is not logged in");
+      return;
+    }
+    
+    setLoadingConversations(true);
+    
+    try {
+      // Fetch conversations
+      const response = await defaultMessagesRepo.getConversations({
+        limit: 100,
+        page: 1,
+      });
+      
+      if (!response.data) {
+        setConversations([]);
+        setLoadingConversations(false);
+        return;
+      }
+      
+      const conversationList = Array.isArray(response.data) ? response.data : [response.data];
+      
+      // Create a map to store conversation details
+      const conversationDetailsMap: { [key: string]: ConversationDetailResponseModel[] } = {};
+      
+      // Fetch details for each conversation
+      for (const conversation of conversationList) {
+        if (!conversation.id) continue;
+        
         try {
-            setIsLoadingConversations(true);
-            const conversationsRes = await defaultMessagesRepo.getConversations({
-                limit: 100,
-                page: 1
-            });
-
-            if (!conversationsRes.data) {
-                setConversations([]);
-                return;
-            }
-
-            const userConversations = Array.isArray(conversationsRes.data) 
-                ? conversationsRes.data 
-                : [conversationsRes.data];
-            const conversationsWithDetails: ConversationWithMembers[] = [];
-
-            for (const conversation of userConversations) {
-                if (!conversation.id) continue;
-
-                try {
-                    // Use getConversationDetailByUserID instead of getConversationDetailByID
-                    const membersRes = await defaultMessagesRepo.getConversationDetailByUserID({ 
-                        conversation_id: conversation.id
-                    });
-
-                    if (!membersRes.data) continue;
-
-                    const members = Array.isArray(membersRes.data) 
-                        ? membersRes.data 
-                        : [membersRes.data];
-
-                    let lastMessage = "";
-                    let lastMessageTime = "";
-                    let unreadCount = 0;
-
-                    try {
-                        const messagesRes = await defaultMessagesRepo.getMessagesByConversationId({
-                            conversation_id: conversation.id,
-                            limit: 1,
-                            page: 1
-                        });
-
-                        if (messagesRes.data) {
-                            const messages = Array.isArray(messagesRes.data) ? messagesRes.data : [messagesRes.data];
-                            if (messages.length > 0) {
-                                lastMessage = messages[0].content || "";
-                                lastMessageTime = messages[0].created_at || "";
-                            }
-                        }
-                    } catch (error) {
-                        console.error("Error fetching messages for conversation:", error);
-                    }
-                    conversationsWithDetails.push({
-                        ...conversation,
-                        members,
-                        isGroup: members.length > 2,
-                        unreadCount,
-                        lastMessage,
-                        lastMessageTime
-                    });
-                } catch (error) {
-                    console.error("Error fetching conversation details:", error);
-                }
-            }
-            const sortedConversations = conversationsWithDetails.sort((a, b) => {
-                if (!a.lastMessageTime) return 1;
-                if (!b.lastMessageTime) return -1;
-                return new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime();
-            });
-
-            setConversations(sortedConversations);
+          const detailsResponse = await defaultMessagesRepo.getConversationDetailByID({
+            userId: user.id,
+            conversationId: conversation.id,
+          });
+          
+          if (detailsResponse.data) {
+            const details = Array.isArray(detailsResponse.data) 
+              ? detailsResponse.data 
+              : [detailsResponse.data];
+              
+            conversationDetailsMap[conversation.id] = details;
+          }
         } catch (error) {
-            console.error("Error fetching conversations:", error);
-        } finally {
-            setIsLoadingConversations(false);
+          console.error(`Error fetching details for conversation ${conversation.id}:`, error);
         }
-    }, [user?.id]);
+      }
+      
+      // Merge conversations with their details
+      const enrichedConversations = conversationList.map(conversation => {
+        const members = conversation.id ? conversationDetailsMap[conversation.id] || [] : [];
+        const isGroup = members.length > 2;
+        
+        // If it's a direct message (not a group), set the name to the other user's name
+        let conversationName = conversation.name;
+        if (!isGroup && members.length === 2) {
+          const otherMember = members.find(m => m.user_id !== user.id);
+          if (otherMember && otherMember.user) {
+            conversationName = otherMember.user.name || conversationName;
+          }
+        }
+        
+        return {
+          ...conversation,
+          name: conversationName,
+          members,
+          isGroup
+        };
+      });
+      
+      setConversations(enrichedConversations);
+    } catch (error) {
+      console.error("Error fetching conversations:", error);
+      setConversationError("Failed to load conversations");
+      setConversations([]);
+    } finally {
+      setLoadingConversations(false);
+    }
+  }, [user?.id]);
+
+  // Get a conversation by ID
+  const getConversationById = useCallback((conversationId: string) => {
+    return conversations.find(c => c.id === conversationId) || null;
+  }, [conversations]);
+
+  // Create a new conversation
+  const createConversation = useCallback(async (userIds: string[], name?: string) => {
+    if (!user?.id) {
+      console.error("Cannot create conversation: user is not logged in");
+      return null;
+    }
     
-    useEffect(() => {
-        if (user?.id) {
-            fetchAllConversations();
-        }
-    }, [user?.id, fetchAllConversations]);
+    if (!userIds.length) {
+      console.error("Cannot create conversation: no users selected");
+      return null;
+    }
+    
+    try {
+      // Create the conversation
+      const isGroup = userIds.length > 1;
+      const conversationName = isGroup 
+        ? (name || `Group with ${userIds.length + 1} members`)
+        : undefined;
+        
+      const response = await defaultMessagesRepo.createConversation({
+        name: conversationName,
+        image: undefined, // Could set a default group image for groups
+      });
+      
+      if (!response.data || !response.data.id) {
+        throw new Error("No conversation data returned");
+      }
+      
+      const conversationId = response.data.id;
+      
+      // Add the current user to the conversation
+      await defaultMessagesRepo.createConversationDetail({
+        conversation_id: conversationId,
+        user_id: user.id,
+      });
+      
+      // Add all other users to the conversation
+      for (const userId of userIds) {
+        if (userId === user.id) continue; // Skip if current user is in the list
+        
+        await defaultMessagesRepo.createConversationDetail({
+          conversation_id: conversationId,
+          user_id: userId,
+        });
+      }
+      
+      // Refresh conversations list
+      fetchAllConversations();
+      
+      return response.data;
+    } catch (error) {
+      console.error("Error creating conversation:", error);
+      setConversationError("Failed to create conversation");
+      return null;
+    }
+  }, [user?.id, fetchAllConversations]);
 
-    // Enhanced setter for activeConversationId to ensure synchronization
-    const setActiveConversationIdSafe = useCallback((id: string | null) => {
-        console.log("Setting active conversation ID:", id);
-        activeConversationIdRef.current = id;
-        setActiveConversationId(id);
-    }, []);
+  // Delete a conversation
+  const deleteConversation = useCallback(async (conversationId: string) => {
+    if (!conversationId) return false;
+    
+    try {
+      await defaultMessagesRepo.deleteConversation({
+        conversation_id: conversationId,
+      });
+      
+      // Remove from state
+      setConversations(prev => prev.filter(c => c.id !== conversationId));
+      
+      // If this was the active conversation, clear it
+      if (activeConversationId === conversationId) {
+        setActiveConversationId(null);
+        setActiveConversation(null);
+      }
+      
+      return true;
+    } catch (error) {
+      console.error("Error deleting conversation:", error);
+      setConversationError("Failed to delete conversation");
+      return false;
+    }
+  }, [activeConversationId]);
 
-    // Enhanced setter for activeConversation to ensure ID is also set
-    const setActiveConversationSafe = useCallback((conversation: ConversationWithMembers | null) => {
-        console.log("Setting active conversation:", conversation?.id);
+  // Effect to update activeConversation when activeConversationId changes
+  useEffect(() => {
+    if (activeConversationId && activeConversationId !== prevActiveIdRef.current) {
+      const conversation = getConversationById(activeConversationId);
+      if (conversation) {
         setActiveConversation(conversation);
-        if (conversation && conversation.id) {
-            setActiveConversationIdSafe(conversation.id);
-        } else if (!conversation) {
-            setActiveConversationIdSafe(null);
-        }
-    }, [setActiveConversationIdSafe]);
-    
-    // Set active conversation when ID changes
-    useEffect(() => {
-        if (activeConversationId) {
-            console.log("Looking for conversation with ID:", activeConversationId);
-            const conversation = conversations.find(c => c.id === activeConversationId);
-            if (conversation) {
-                console.log("Found matching conversation:", conversation.name);
-                setActiveConversation(conversation);
-            } else {
-                console.warn("No matching conversation found for ID:", activeConversationId);
-            }
-        } else {
-            setActiveConversation(null);
-        }
-    }, [activeConversationId, conversations]);
+      }
+      prevActiveIdRef.current = activeConversationId;
+    } else if (!activeConversationId && prevActiveIdRef.current) {
+      setActiveConversation(null);
+      prevActiveIdRef.current = null;
+    }
+  }, [activeConversationId, getConversationById]);
 
-    const getExistingConversation = useCallback(async (userId: string, friendId: string): Promise<string | null> => {
-        try {
-            const userRes = await defaultMessagesRepo.getConversationDetailByUserID({ user_id: userId });
-            const friendRes = await defaultMessagesRepo.getConversationDetailByUserID({ user_id: friendId });
-        
-            if (userRes.data && friendRes.data) {
-                const userConvos = Array.isArray(userRes.data) ? userRes.data : [userRes.data];
-                const friendConvos = Array.isArray(friendRes.data) ? friendRes.data : [friendRes.data];
-        
-                const commonConvo = userConvos.find(uc => {
-                    const ucId = uc.conversation_id || (uc.conversation && uc.conversation.id);
-                    return friendConvos.some(fc => {
-                        const fcId = fc.conversation_id || (fc.conversation && fc.conversation.id);
-                        return ucId === fcId;
-                    });
-                });
-            
-                if (commonConvo) {
-                    const conversationId = commonConvo.conversation_id || (commonConvo.conversation && commonConvo.conversation.id);
-                    return conversationId || null;
-                }
-            }
-        } catch (err) {
-            console.error("Error finding existing conversation:", err);
-        }
-        return null;
-    }, []);
+  // Initial load
+  useEffect(() => {
+    if (user?.id) {
+      fetchAllConversations();
+    }
+  }, [user?.id, fetchAllConversations]);
 
-    return {
-        getExistingConversation,
-        activeConversation,
-        setActiveConversation: setActiveConversationSafe,
-        activeConversationId,
-        setActiveConversationId: setActiveConversationIdSafe,
-        conversations,
-        fetchAllConversations,
-        isLoadingConversations
-    };
+  return {
+    conversations,
+    loadingConversations,
+    activeConversationId,
+    setActiveConversationId,
+    activeConversation,
+    setActiveConversation,
+    conversationError,
+    fetchAllConversations,
+    createConversation,
+    deleteConversation,
+    getConversationById,
+    isLoadingConversations: loadingConversations,
+  };
 };
