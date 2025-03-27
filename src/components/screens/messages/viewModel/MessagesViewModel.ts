@@ -172,9 +172,12 @@ export const useMessagesViewModel = () => {
     sendMessage: async (content: string, conversationId: string) => {
       if (!conversationId || !content.trim() || !user) return;
       
+      // Tạo ID tạm thời để theo dõi tin nhắn
+      const tempId = `temp_${Date.now()}`;
+      
       // Create temporary message for optimistic UI update
       const tempMessage: MessageResponseModel = {
-        id: `temp_${Date.now()}`,
+        id: tempId,
         user_id: user.id,
         user: {
           id: user.id,
@@ -205,19 +208,33 @@ export const useMessagesViewModel = () => {
         });
         
         if (response.data) {
+          // Tạo reference đến real message từ API
+          const realMessage = response.data as MessageResponseModel;
+          
+          // Lưu trữ mapping giữa tempId và realMessage.id để sử dụng sau này
+          // khi cần xác định message nào là tin nhắn tạm thời
+          const tempToRealIdMap = new Map();
+          tempToRealIdMap.set(tempId, realMessage.id);
+          
           // Replace temporary message with the real one
           setMessages(prev => 
             prev.map(msg => 
-              msg.id === tempMessage.id ? { ...response.data as MessageResponseModel, isTemporary: false } : msg
+              msg.id === tempId ? { ...realMessage, isTemporary: false } : msg
             )
           );
+          
+          // Thành công, không còn cần hiển thị "đang gửi"
+          console.log("Message sent successfully:", realMessage);
+          
+          // Không cần fetch lại messages ngay lập tức vì đã cập nhật UI
+          // Người nhận sẽ nhận tin nhắn qua WebSocket
         }
       } catch (error) {
         console.error("Error sending message:", error);
         message.error(localStrings.Public.ErrorSendingMessage || "Error sending message");
         
         // Remove the temporary message on error
-        setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id));
+        setMessages(prev => prev.filter(msg => msg.id !== tempId));
       }
     },
     
@@ -313,19 +330,61 @@ export const useMessagesViewModel = () => {
     const wsUrl = `${ApiPath.CONNECT_TO_WEBSOCKET}${user.id}`;
     
     try {
+      console.log("Connecting to WebSocket:", wsUrl);
       const ws = new WebSocket(wsUrl);
       
       ws.onopen = () => {
-        console.log("WebSocket connection established");
+        console.log("WebSocket connection established successfully");
       };
       
       ws.onmessage = (event) => {
         try {
+          // Log raw message để debug
+          console.log("WebSocket raw message:", event.data);
+          
+          // Parse JSON message
           const newMessage = JSON.parse(event.data);
+          console.log("WebSocket parsed message:", newMessage);
+          
+          // Kiểm tra cấu trúc message
+          if (!newMessage) {
+            console.warn("WebSocket received empty message");
+            return;
+          }
+          
+          // Kiểm tra conversation_id
+          if (!newMessage.conversation_id) {
+            console.warn("WebSocket message missing conversation_id:", newMessage);
+            return;
+          }
           
           // If the message is for the current conversation, add it to the messages
           if (currentConversation && newMessage.conversation_id === currentConversation.id) {
-            setMessages(prev => [...prev, newMessage]);
+            console.log("Adding new message to current conversation:", newMessage);
+            
+            // Kiểm tra xem message đã tồn tại trong danh sách chưa
+            setMessages(prev => {
+              // Nếu message này đã tồn tại (có thể là tin nhắn tạm thời), không thêm vào nữa
+              const messageExists = prev.some(msg => 
+                (msg.id === newMessage.id) || 
+                (msg.content === newMessage.content && 
+                 msg.user_id === newMessage.user_id && 
+                 Math.abs(new Date(msg.created_at || "").getTime() - 
+                          new Date(newMessage.created_at || "").getTime()) < 5000)
+              );
+              
+              if (messageExists) {
+                console.log("Message already exists in list, not adding duplicate");
+                return prev;
+              }
+              
+              console.log("Adding new message to list");
+              return [...prev, newMessage];
+            });
+          } else {
+            console.log("Message is for another conversation:", 
+                       newMessage.conversation_id, 
+                       "current:", currentConversation?.id);
           }
           
           // Update conversation list without re-fetching
@@ -334,6 +393,7 @@ export const useMessagesViewModel = () => {
             
             const conversationIndex = prev.findIndex(c => c.id === newMessage.conversation_id);
             if (conversationIndex >= 0) {
+              console.log("Updating conversation order for new message");
               // Move the conversation with new message to the top
               const updatedConversations = [...prev];
               const conversation = { ...updatedConversations[conversationIndex] };
@@ -344,13 +404,14 @@ export const useMessagesViewModel = () => {
               return updatedConversations;
             }
             
-            // Nếu là conversation mới, chỉ load lại danh sách conversation nếu cần thiết
-            if (!conversationsLoadedRef.current) {
-              // Đặt timeout để đảm bảo không gọi API quá nhanh
-              setTimeout(() => {
-                stableActions.current.fetchConversations();
-              }, 500);
-            }
+            // Nếu là conversation mới, load lại danh sách conversation
+            console.log("Message is for a new conversation, refreshing conversation list");
+            // Đặt timeout để đảm bảo không gọi API quá nhanh
+            setTimeout(() => {
+              // Reset conversation loaded flag to force refresh
+              conversationsLoadedRef.current = false;
+              stableActions.current.fetchConversations();
+            }, 500);
             
             return prev;
           });
@@ -363,8 +424,31 @@ export const useMessagesViewModel = () => {
         console.error("WebSocket error:", error);
       };
       
-      ws.onclose = () => {
-        console.log("WebSocket connection closed");
+      ws.onclose = (event) => {
+        console.log("WebSocket connection closed", event.code, event.reason);
+        
+        // Attempt to reconnect after 5 seconds if not closed intentionally
+        if (event.code !== 1000) {
+          console.log("Attempting to reconnect WebSocket in 5 seconds...");
+          setTimeout(() => {
+            if (user?.id) {
+              // Reset WebSocket ref
+              socketRef.current = null;
+              // Create new WebSocket connection
+              try {
+                const newWs = new WebSocket(wsUrl);
+                // Apply same handlers...
+                newWs.onopen = ws.onopen;
+                newWs.onmessage = ws.onmessage;
+                newWs.onerror = ws.onerror;
+                newWs.onclose = ws.onclose;
+                socketRef.current = newWs;
+              } catch (error) {
+                console.error("Error reconnecting WebSocket:", error);
+              }
+            }
+          }, 5000);
+        }
       };
       
       socketRef.current = ws;
@@ -372,14 +456,15 @@ export const useMessagesViewModel = () => {
       // Clean up WebSocket connection on unmount
       return () => {
         if (socketRef.current) {
-          socketRef.current.close();
+          // Use 1000 code to indicate clean close
+          socketRef.current.close(1000, "Component unmounting");
           socketRef.current = null;
         }
       };
     } catch (error) {
       console.error("Error creating WebSocket connection:", error);
     }
-  }, [user?.id]);
+  }, [user?.id, currentConversation?.id]);
 
   // Memoize API functions để đảm bảo tham chiếu cố định
   const fetchConversations = useCallback((page = 1) => {
@@ -391,8 +476,9 @@ export const useMessagesViewModel = () => {
   }, []);
   
   const sendMessage = useCallback(() => {
-    if (currentConversation?.id) {
-      stableActions.current.sendMessage(messageText, currentConversation.id);
+    if (currentConversation?.id && messageText.trim()) {
+      const messageToSend = messageText.trim();
+      stableActions.current.sendMessage(messageToSend, currentConversation.id);
       setMessageText("");
     }
   }, [currentConversation?.id, messageText]);
