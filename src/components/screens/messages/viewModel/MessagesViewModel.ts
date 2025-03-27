@@ -1,468 +1,419 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { message as antdMessage } from "antd";
-import { useAuth } from "@/context/auth/useAuth";
-import { defaultMessagesRepo } from "@/api/features/messages/MessagesRepo";
-import { ConversationResponseModel } from "@/api/features/messages/models/ConversationModel";
-import { MessageResponseModel } from "@/api/features/messages/models/MessageModel";
-import { ConversationDetailResponseModel } from "@/api/features/messages/models/ConversationDetailModel";
-
-export type MessagesState = {
-  [conversationId: string]: MessageResponseModel[];
-};
-
-export interface UserTyping {
-  userId: string;
-  username: string;
-  timestamp: number;
-}
+import { UserModel } from '@/api/features/authenticate/model/LoginModel';
+import { FriendResponseModel } from '@/api/features/profile/model/FriendReponseModel';
+import { defaultProfileRepo } from '@/api/features/profile/ProfileRepository';
+import { MessageResponseModel } from '@/api/features/messages/models/MessageModel';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useAuth } from '@/context/auth/useAuth';
+import { useConversationViewModel } from './components/ConversationViewModel';
+import { defaultMessagesRepo } from '@/api/features/messages/MessagesRepo';
+import { useWebSocketConnect } from './components/WebSocketConnect';
+import { ConversationDetailResponseModel } from '@/api/features/messages/models/ConversationDetailModel';
 
 export const useMessageViewModel = () => {
   const { user, localStrings } = useAuth();
-  const [messages, setMessages] = useState<MessagesState>({});
-  const [loadingMessages, setLoadingMessages] = useState<{[id: string]: boolean}>({});
-  const [newMessage, setNewMessage] = useState<string>("");
-  const [messageError, setMessageError] = useState<string | null>(null);
-  const [replyTo, setReplyTo] = useState<MessageResponseModel | null>(null);
-  const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
-  const [isConnected, setIsConnected] = useState<boolean>(false);
-  const [typingUsers, setTypingUsers] = useState<{[conversationId: string]: UserTyping[]}>({});
+  const { getExistingConversation } = useConversationViewModel();
   
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const webSocketRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const wsEndpointRef = useRef<string>("");
+  const [newMessage, setNewMessage] = useState('');
+  const [activeFriend, setActiveFriend] = useState<FriendResponseModel | null>(null);
+  const [replyTo, setReplyTo] = useState<MessageResponseModel | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const [friends, setFriends] = useState<FriendResponseModel[]>([]);
+  const [activeFriendProfile, setActiveFriendProfile] = useState<UserModel | null>(null); 
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [messageError, setMessageError] = useState<string | null>(null);
+  
+  const {
+    messages,
+    setMessages,
+    activeConversationId,
+    setActiveConversationId,
+    connectToWebSocket,
+    initializeConversation,
+    sendMessage,
+    isConnected,
+    updateTemporaryMessages
+  } = useWebSocketConnect();
 
-  // Set up WebSocket connection
-  const setupWebSocket = useCallback((userId: string) => {
-    if (!userId) return;
-    
-    // Close existing connection if any
-    if (webSocketRef.current) {
-      webSocketRef.current.close();
-      webSocketRef.current = null;
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-    
-    // Clear any existing reconnect timeout
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
+  }, [messages]);
+
+  useEffect(() => {
+    if (activeFriend && activeFriend.id && user?.id) {
+      setupConversationForFriend(activeFriend.id);
     }
-    
-    const wsUrl = process.env.NEXT_PUBLIC_API_ENDPOINT!.replace("http", "ws") + 
-                 `/v1/2024/messages/ws/${userId}`;
-                 
-    wsEndpointRef.current = wsUrl;
+  }, [activeFriend, user?.id]);
+  
+  useEffect(() => {
+    if (activeFriend?.id && !isLoadingMessages) {
+      const timerId = setTimeout(() => {
+        updateTemporaryMessages(activeFriend.id || '');
+      }, 200);
+      
+      return () => clearTimeout(timerId);
+    }
+  }, [activeFriend?.id, isLoadingMessages, updateTemporaryMessages]);
+
+  const setupConversationForFriend = async (friendId: string) => {
+    if (!user?.id) return;
     
     try {
-      console.log("Connecting to WebSocket:", wsUrl);
-      const ws = new WebSocket(wsUrl);
+      setIsLoadingMessages(true);
       
-      ws.onopen = () => {
-        console.log("WebSocket connection established");
-        setIsConnected(true);
-      };
+      const existingConvId = await getExistingConversation(user.id, friendId);
       
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          console.log("WebSocket message received:", data);
-          
-          if (data.type === "message" && data.conversation_id) {
-            handleIncomingMessage(data);
-          } else if (data.type === "typing") {
-            handleTypingIndicator(data);
-          }
-        } catch (error) {
-          console.error("Error parsing WebSocket message:", error);
-        }
-      };
-      
-      ws.onerror = (error) => {
-        console.error("WebSocket error:", error);
-        setIsConnected(false);
-      };
-      
-      ws.onclose = () => {
-        console.log("WebSocket connection closed");
-        setIsConnected(false);
+      if (existingConvId) {
+        console.log("Đã tìm thấy cuộc trò chuyện:", existingConvId);
+        setActiveConversationId(existingConvId);
+        initializeConversation(existingConvId);
+        fetchMessages(existingConvId);
+      } else {
+        const newConversation = await createNewConversation(user.id, friendId);
         
-        // Attempt to reconnect after a delay
-        reconnectTimeoutRef.current = setTimeout(() => {
-          setupWebSocket(userId);
-        }, 5000);
-      };
-      
-      webSocketRef.current = ws;
-      
-      // Set up ping interval to keep connection alive
-      const pingInterval = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "ping" }));
-        } else if (ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
-          clearInterval(pingInterval);
+        if (newConversation) {
+          setActiveConversationId(newConversation);
+          initializeConversation(newConversation);
+        } else {
         }
-      }, 30000);
-      
-      return () => {
-        clearInterval(pingInterval);
-        if (ws) {
-          ws.close();
-        }
-      };
+      }
     } catch (error) {
-      console.error("Error setting up WebSocket:", error);
-      setIsConnected(false);
-      
-      // Attempt to reconnect after a delay
-      reconnectTimeoutRef.current = setTimeout(() => {
-        setupWebSocket(userId);
-      }, 5000);
+      console.error("Lỗi khi thiết lập cuộc trò chuyện:", error);
+    } finally {
+      setIsLoadingMessages(false);
     }
-  }, []);
+  };
 
-  // Handle incoming message from WebSocket
-  const handleIncomingMessage = useCallback((data: any) => {
-    const { conversation_id, message } = data;
-    
-    if (!conversation_id || !message) return;
-    
-    setMessages(prevMessages => {
-      const conversationMessages = prevMessages[conversation_id] || [];
-      
-      // Check if this message already exists to avoid duplicates
-      const messageExists = conversationMessages.some(m => m.id === message.id);
-      if (messageExists) return prevMessages;
-      
-      // Filter out temporary messages that match this one
-      const filteredMessages = conversationMessages.filter(m => {
-        if (m.isTemporary && m.user_id === message.user_id && m.content === message.content) {
-          return false;
-        }
-        return true;
-      });
-      
-      // Add the new message
-      return {
-        ...prevMessages,
-        [conversation_id]: [...filteredMessages, message]
-      };
-    });
-  }, []);
-
-  // Handle typing indicator
-  const handleTypingIndicator = useCallback((data: any) => {
-    const { conversation_id, user_id, username } = data;
-    
-    if (!conversation_id || !user_id || user_id === user?.id) return;
-    
-    setTypingUsers(prev => {
-      const conversationTypers = prev[conversation_id] || [];
-      
-      // Update or add typing user
-      const updatedTypers = conversationTypers.filter(u => u.userId !== user_id);
-      updatedTypers.push({
-        userId: user_id,
-        username: username || "Someone",
-        timestamp: Date.now()
-      });
-      
-      return {
-        ...prev,
-        [conversation_id]: updatedTypers
-      };
-    });
-    
-    // Remove typing indicator after 3 seconds
-    setTimeout(() => {
-      setTypingUsers(prev => {
-        const conversationTypers = prev[conversation_id] || [];
-        const updatedTypers = conversationTypers.filter(u => 
-          u.userId !== user_id || Date.now() - u.timestamp < 3000
-        );
-        
-        return {
-          ...prev,
-          [conversation_id]: updatedTypers
-        };
-      });
-    }, 3000);
-  }, [user?.id]);
-
-  // Subscribe to a conversation
-  const subscribeToConversation = useCallback((conversationId: string) => {
-    if (!webSocketRef.current || webSocketRef.current.readyState !== WebSocket.OPEN) {
-      console.warn("WebSocket not connected, cannot subscribe to conversation");
-      return false;
-    }
-    
-    try {
-      webSocketRef.current.send(JSON.stringify({
-        type: "subscribe",
-        conversation_id: conversationId
-      }));
-      return true;
-    } catch (error) {
-      console.error("Error subscribing to conversation:", error);
-      return false;
-    }
-  }, []);
-
-  // Send typing indicator
-  const sendTypingIndicator = useCallback((conversationId: string) => {
-    if (!webSocketRef.current || webSocketRef.current.readyState !== WebSocket.OPEN || !user) {
-      return false;
-    }
-    
-    try {
-      webSocketRef.current.send(JSON.stringify({
-        type: "typing",
-        conversation_id: conversationId,
-        user_id: user.id,
-        username: user.name
-      }));
-      return true;
-    } catch (error) {
-      console.error("Error sending typing indicator:", error);
-      return false;
-    }
-  }, [user]);
-
-  // Fetch messages for a conversation
   const fetchMessages = useCallback(async (conversationId: string) => {
-    if (!conversationId) {
-      console.error("Cannot fetch messages: conversationId is missing");
-      return Promise.reject("Missing conversation ID");
+    if (!conversationId || !activeFriend?.id) {
+      return;
     }
     
-    setLoadingMessages(prev => ({ ...prev, [conversationId]: true }));
-    
     try {
+      setIsLoadingMessages(true);
+      
       const response = await defaultMessagesRepo.getMessagesByConversationId({
         conversation_id: conversationId,
-        limit: 100,
         page: 1,
+        limit: 100,
       });
       
       if (response.data) {
-        // Sort messages by creation time
-        const messageArray = Array.isArray(response.data) ? response.data : [response.data];
-        messageArray.sort((a, b) => {
-          return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
-        });
+        const fetchedMessages = Array.isArray(response.data) 
+          ? response.data as MessageResponseModel[] 
+          : [response.data as MessageResponseModel]
         
-        setMessages(prev => ({
-          ...prev,
-          [conversationId]: messageArray
+        const normalizedMessages = fetchedMessages.map(msg => ({
+          ...msg,
+          text: msg.content || msg.text,
+          content: msg.content || msg.text,
+          isTemporary: false 
         }));
         
-        // Subscribe to this conversation for real-time updates
-        subscribeToConversation(conversationId);
+        const sortedMessages = normalizedMessages.sort(
+          (a, b) => new Date(a.created_at || '').getTime() - new Date(b.created_at || '').getTime()
+        );
         
-        setTimeout(() => {
-          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-        }, 100);
-        
-        return response.data;
-      }
-      return [];
-    } catch (error) {
-      console.error("Error fetching messages:", error);
-      setMessageError("Failed to load messages");
-      return Promise.reject(error);
-    } finally {
-      setLoadingMessages(prev => ({ ...prev, [conversationId]: false }));
-    }
-  }, [subscribeToConversation]);
-
-  // Send a message
-  const handleSendMessage = useCallback((content: string, conversationId: string, replyToMessage?: MessageResponseModel) => {
-    if (!user || !conversationId || !content.trim()) {
-      setMessageError("Cannot send message: Missing required data");
-      return false;
-    }
-    
-    if (content.length > 500) {
-      setMessageError(localStrings.Messages.MessageTooLong || "Message must not exceed 500 characters");
-      return false;
-    }
-    
-    try {
-      // Create temporary message to display immediately
-      const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      const tempMessage: MessageResponseModel = {
-        id: tempId,
-        user_id: user.id,
-        conversation_id: conversationId,
-        content: content,
-        text: content, // Adding for compatibility
-        created_at: new Date().toISOString(),
-        user: {
-          id: user.id,
-          name: user.name,
-          family_name: user.family_name,
-          avatar_url: user.avatar_url,
-        },
-        isTemporary: true,
-        parent_id: replyToMessage?.id,
-        reply_to: replyToMessage
-      };
-      
-      // Add temporary message to state
-      setMessages(prev => {
-        const conversationMessages = prev[conversationId] || [];
-        return {
-          ...prev,
-          [conversationId]: [...conversationMessages, tempMessage]
-        };
-      });
-      
-      // Scroll to bottom
-      setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      }, 100);
-      
-      // Send the message to the server
-      defaultMessagesRepo.createMessage({
-        content: content,
-        conversation_id: conversationId,
-        parent_id: replyToMessage?.id,
-        parent_content: replyToMessage?.content || replyToMessage?.text,
-        user: {
-          id: user.id,
-          name: user.name,
-          family_name: user.family_name,
-          avatar_url: user.avatar_url,
-        }
-      }).catch(error => {
-        console.error("Error sending message:", error);
-        
-        // Remove temporary message on error
-        setMessages(prev => {
-          const conversationMessages = prev[conversationId] || [];
+        setMessages(prevMessages => {
+          const friendId = activeFriend.id || '';
+          
           return {
-            ...prev,
-            [conversationId]: conversationMessages.filter(m => m.id !== tempId)
+            ...prevMessages,
+            [friendId]: sortedMessages
           };
         });
         
-        setMessageError("Failed to send message");
-      });
-      
-      return true;
-    } catch (error) {
-      console.error("Error preparing message:", error);
-      setMessageError("Failed to prepare message");
-      return false;
+        setTimeout(() => {
+        }, 500);
+      }
+    } catch (err) {
+      console.error("Lỗi khi tải tin nhắn", err);
+    } finally {
+      setIsLoadingMessages(false);
     }
-  }, [user, localStrings.Messages.MessageTooLong]);
+  }, [activeFriend, setMessages]);
 
-  // Delete a message
-  const deleteMessage = useCallback(async (messageId: string, conversationId: string) => {
-    if (!messageId || !conversationId) return false;
+  const findFriendByConversationId = useCallback(async (conversationId: string): Promise<FriendResponseModel | null> => {
+    if (!user?.id) return null;
     
     try {
-      // Optimistic update - remove from UI first
-      setMessages(prev => {
-        const conversationMessages = prev[conversationId] || [];
-        return {
-          ...prev,
-          [conversationId]: conversationMessages.filter(m => m.id !== messageId)
-        };
+      setIsLoadingMessages(true);
+      
+      const response = await defaultMessagesRepo.getConversationDetailByUserID({ 
+        conversation_id: conversationId 
       });
       
-      // Actually delete from server
-      await defaultMessagesRepo.deleteMessage({
-        message_id: messageId,
-      });
+      if (!response.data) {
+        return null;
+      }
       
-      return true;
-    } catch (error) {
-      console.error("Error deleting message:", error);
+      const conversationDetails = Array.isArray(response.data) ? response.data : [response.data];
       
-      // Fetch messages again to restore state
+      const otherUser = conversationDetails.find(detail => 
+        detail.user_id !== user.id
+      );
+      
+      if (!otherUser || !otherUser.user) {
+        return null;
+      }
+      
+      const friend: FriendResponseModel = {
+        id: otherUser.user.id,
+        name: otherUser.user.name,
+        family_name: otherUser.user.family_name,
+        avatar_url: otherUser.user.avatar_url
+      };
+      
+      initializeConversation(conversationId);
       fetchMessages(conversationId);
       
-      return false;
+      return friend;
+    } catch (error) {
+      return null;
+    } finally {
+      setIsLoadingMessages(false);
     }
-  }, [fetchMessages]);
-
-  // Force update temporary messages (check for long-pending temp messages)
-  const forceUpdateTempMessages = useCallback(() => {
-    setMessages(prev => {
-      let updated = false;
-      const now = Date.now();
+  }, [user, initializeConversation, fetchMessages]);
+  
+const createNewConversation = useCallback(async (userId: string, friendId: string, retryCount = 0): Promise<string | null> => {
+  try {
+    
+    const friend = friends.find(f => f.id === friendId);
+    const friendName = friend ? `${friend.family_name || ''} ${friend.name || ''}`.trim() : 'friend';
+    const userName = user ? `${user.family_name || ''} ${user.name || ''}`.trim() : 'user';
+    
+    let conversationName = `Chat: ${userName} - ${friendName}`;
+    if (conversationName.length > 30) {
+      const maxNameLength = 10; 
+      const truncatedUserName = userName.length > maxNameLength 
+        ? userName.substring(0, maxNameLength) + "..." 
+        : userName;
+      const truncatedFriendName = friendName.length > maxNameLength 
+        ? friendName.substring(0, maxNameLength) + "..." 
+        : friendName;
       
-      // Check each conversation
-      const newMessages = Object.keys(prev).reduce((acc, convId) => {
-        const messages = prev[convId];
-        
-        // For each message, check if it's temporary and older than 30 seconds
-        const updatedMessages = messages.map(msg => {
-          if (msg.isTemporary && now - new Date(msg.created_at || 0).getTime() > 30000) {
-            updated = true;
-            return {
-              ...msg,
-              text: msg.text ? `${msg.text} (sending...)` : '(sending...)',
-              content: msg.content ? `${msg.content} (sending...)` : '(sending...)'
-            };
-          }
-          return msg;
-        });
-        
-        acc[convId] = updatedMessages;
-        return acc;
-      }, {} as MessagesState);
+      conversationName = `Chat: ${truncatedUserName} - ${truncatedFriendName}`;
       
-      return updated ? newMessages : prev;
-    });
-  }, []);
-
-  // Initialize WebSocket when user changes
-  useEffect(() => {
-    if (user?.id) {
-      setupWebSocket(user.id);
+      if (conversationName.length > 30) {
+        conversationName = conversationName.substring(0, 29) + "…";
+      }
     }
     
-    return () => {
-      if (webSocketRef.current) {
-        webSocketRef.current.close();
-      }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-    };
-  }, [user?.id, setupWebSocket]);
+    const response = await defaultMessagesRepo.createConversation({
+      name: conversationName
+    });
+    
+    if (response.error) {
+      throw new Error(`API trả về lỗi: ${response.error.message}`);
+    }
+    
+    if (!response.data?.id) {
+      throw new Error("Không nhận được ID cuộc trò chuyện từ response");
+    }
+    
+    const conversationId = response.data.id;
+    
+    const userDetailResponse = await defaultMessagesRepo.createConversationDetail({
+      conversation_id: conversationId,
+      user_id: userId
+    });
+    
+    if (userDetailResponse.error) {
+      throw new Error(`Lỗi khi thêm người dùng: ${userDetailResponse.error.message}`);
+    }
+    
+    const friendDetailResponse = await defaultMessagesRepo.createConversationDetail({
+      conversation_id: conversationId,
+      user_id: friendId
+    });
+    
+    if (friendDetailResponse.error) {
+      throw new Error(`Lỗi khi thêm bạn: ${friendDetailResponse.error.message}`);
+    }
+    
+    return conversationId;
+  } catch (error) {
+    
+    if (retryCount < 2) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      return createNewConversation(userId, friendId, retryCount + 1);
+    }
+    
+    return null;
+  }
+}, [user, friends]);
+  const fetchFriends = useCallback(async (page: number) => {
+    try {
+      
+      const response = await defaultProfileRepo.getListFriends({
+        page: page,
+        limit: 20,
+        user_id: user?.id,
+      });
 
-  // Initial state setup and cleanup
-  useEffect(() => {
-    return () => {
-      if (webSocketRef.current) {
-        webSocketRef.current.close();
+      if (response?.data) {
+        if (Array.isArray(response?.data)) {
+          const friends = response?.data.map(
+            (friendResponse: UserModel) => ({
+              id: friendResponse.id,
+              family_name: friendResponse.family_name,
+              name: friendResponse.name,
+              avatar_url: friendResponse.avatar_url,
+            })
+          ) as UserModel[];
+          setFriends(friends);
+        } else {
+          setFriends([]);
+        }
       }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
+    } catch (error) {
+    }
+  }, [user]);
+
+  const fetchUserProfile = useCallback(async (userId: string) => {
+    try {
+      const response = await defaultProfileRepo.getProfile(userId);
+      if (response?.data) {
+        setActiveFriendProfile(response.data);
+        setIsProfileModalOpen(true); 
       }
-    };
+    } catch (error) {
+    }
   }, []);
 
+  const handleSendMessage = useCallback((message: string, replyToMessage?: MessageResponseModel) => {
+    setMessageError(null);
+
+    if (!message.trim() || !activeFriend || !activeConversationId) {
+      return false;
+    }
+    
+    if (message.length > 500) {
+      setMessageError(localStrings.Messages.MessageTooLong);
+      return false;
+    }
+    
+    const tempId = `temp-${Date.now()}`;
+    const tempMessage: MessageResponseModel = {
+      id: tempId,
+      conversation_id: activeConversationId,
+      user_id: user?.id || '',
+      content: message,
+      text: message,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      isTemporary: true,
+      reply_to: replyToMessage,
+      user: {
+        id: user?.id,
+        name: user?.name,
+        family_name: user?.family_name,
+        avatar_url: user?.avatar_url
+      }
+    };
+    
+    setMessages(prevMessages => {
+      const friendId = activeFriend.id || '';
+      
+      if (!prevMessages[friendId]) {
+        return {
+          ...prevMessages,
+          [friendId]: [tempMessage]
+        };
+      }
+      
+      return {
+        ...prevMessages,
+        [friendId]: [...prevMessages[friendId], tempMessage]
+      };
+    });
+    
+    const success = sendMessage(message, replyToMessage);
+    
+    if (!success) {
+      
+      defaultMessagesRepo.createMessage({
+        content: message,
+        conversation_id: activeConversationId,
+        parent_id: replyToMessage?.id,
+        parent_content: replyToMessage?.text || replyToMessage?.content,
+        user: {
+          id: user?.id,
+          name: user?.name,
+          family_name: user?.family_name,
+          avatar_url: user?.avatar_url
+        }
+      }).then(response => {
+        if (response.data && response.data.id) {
+          setMessages(prevMessages => {
+            const friendId = activeFriend.id || '';
+            if (!prevMessages[friendId]) return prevMessages;
+            
+            const updatedMessages = [...prevMessages[friendId]];
+            const tempIndex = updatedMessages.findIndex(
+              msg => msg.id === tempId
+            );
+            
+            if (tempIndex !== -1) {
+              updatedMessages[tempIndex] = {
+                ...updatedMessages[tempIndex],
+                ...response.data,
+                isTemporary: false,
+                text: message,
+                content: message
+              };
+            }
+            
+            return {
+              ...prevMessages,
+              [friendId]: updatedMessages
+            };
+          });
+        }
+      }).catch(error => {
+      });
+    }
+    setTimeout(() => {
+      updateTemporaryMessages(activeFriend.id || '');
+    }, 5000);
+    
+    return true;
+  }, [activeFriend, activeConversationId, user, sendMessage, setMessages, updateTemporaryMessages]);
+
+  const forceUpdateTempMessages = useCallback(() => {
+    if (activeFriend?.id) {
+      updateTemporaryMessages(activeFriend.id);
+    }
+  }, [activeFriend, updateTemporaryMessages]);
+
   return {
-    messageError,
-    setMessageError,
+    fetchMessages,
     newMessage,
     setNewMessage,
+    activeFriend,
+    setActiveFriend,
     messages,
-    fetchMessages,
+    setMessages,
+    messageError,
+    setMessageError,
     replyTo,
     setReplyTo,
     messagesEndRef,
+    fetchFriends,
+    friends,
+    fetchUserProfile, 
+    activeFriendProfile, 
+    isProfileModalOpen, 
     setIsProfileModalOpen,
-    isProfileModalOpen,
+    activeConversationId,
+    setActiveConversationId,
+    getExistingConversation,
     handleSendMessage,
-    deleteMessage,
     isConnected,
-    typingUsers,
-    sendTypingIndicator,
-    isLoadingMessages: loadingMessages,
+    isLoadingMessages,
     forceUpdateTempMessages,
+    findFriendByConversationId
   };
 };
