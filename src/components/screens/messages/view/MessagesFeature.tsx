@@ -17,33 +17,7 @@ const MessagesFeature = () => {
   const { user, localStrings } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  
-  const {
-    messageError,
-    setMessageError,
-    newMessage,
-    setNewMessage,
-    activeFriend,         
-    setActiveFriend,
-    messages,
-    fetchMessages,
-    replyTo,
-    setReplyTo,
-    messagesEndRef,
-    fetchFriends,
-    friends,
-    fetchUserProfile,
-    setIsProfileModalOpen,
-    isProfileModalOpen,
-    activeFriendProfile,
-    activeConversationId,
-    handleSendMessage,
-    isConnected,
-    isLoadingMessages,
-    forceUpdateTempMessages
-  } = useMessageViewModel();
 
-  // UI state
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [groupSearch, setGroupSearch] = useState("");
