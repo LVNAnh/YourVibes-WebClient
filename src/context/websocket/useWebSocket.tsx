@@ -345,8 +345,10 @@ export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
       // Get existing messages
       const existingMessages = prev[conversationId] || [];
       
-      // Merge existing and new messages, removing duplicates
+      // Merge existing and new messages
       const allMessages = [...existingMessages, ...formattedMessages];
+      
+      // Remove duplicates based on ID uniqueness
       const uniqueMessages = Array.from(
         new Map(allMessages.map(item => [item.id, item])).values()
       );

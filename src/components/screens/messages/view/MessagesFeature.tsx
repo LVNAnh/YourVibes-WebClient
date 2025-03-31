@@ -37,7 +37,8 @@ const MessagesFeature: React.FC = () => {
     loadMoreMessages,
     isWebSocketConnected,
     messageListRef,
-    handleScroll
+    handleScroll,
+    getMessagesForConversation,
   } = useMessagesViewModel();
 
   const [isMobile, setIsMobile] = useState(false);
@@ -181,39 +182,63 @@ const MessagesFeature: React.FC = () => {
                 ) : (
                   <List
                     dataSource={filteredConversations}
-                    renderItem={(item) => (
-                      <List.Item 
-                        onClick={() => handleSelectConversation(item)}
-                        style={{ 
-                          cursor: "pointer", 
-                          padding: "12px 16px",
-                          background: currentConversation?.id === item.id ? lightGray : "transparent",
-                          transition: "background 0.3s"
-                        }}
-                        key={item.id}
-                      >
-                        <List.Item.Meta
-                          avatar={
-                            <Avatar 
-                              src={item.image} 
-                              size={48}
-                              style={{ 
-                                backgroundColor: !item.image ? brandPrimary : undefined 
-                              }}
-                            >
-                              {!item.image && item.name?.charAt(0).toUpperCase()}
-                            </Avatar>
-                          }
-                          title={<Text strong>{item.name}</Text>}
-                          description={
-                            <Text type="secondary" ellipsis>
-                              {/* Show last message preview here if available */}
-                              {localStrings.Messages.StartConversation || "Start chatting"}
-                            </Text>
-                          }
-                        />
-                      </List.Item>
-                    )}
+                    renderItem={(item) => {
+                      // Lấy tin nhắn cuối cùng của cuộc trò chuyện
+                      const conversationMessages = getMessagesForConversation(item.id || '');
+                      const lastMessage = conversationMessages.length > 0 
+                        ? conversationMessages[conversationMessages.length - 1] 
+                        : null;
+                      
+                      // Hiển thị tin nhắn cuối hoặc thông báo mặc định
+                      const messagePreview = lastMessage?.content 
+                        ? lastMessage.content
+                        : (localStrings.Messages.StartConversation || "Start chatting");
+                      
+                      // Định dạng tên người gửi nếu có
+                      const senderName = lastMessage?.user_id === user?.id 
+                        ? (localStrings.Messages.You || "You") 
+                        : lastMessage?.user 
+                          ? `${lastMessage.user.family_name || ''} ${lastMessage.user.name || ''}`.trim()
+                          : '';
+                      
+                      // Hiển thị tin nhắn cuối với tên người gửi
+                      const messageDisplay = lastMessage 
+                        ? (senderName ? `${senderName}: ${messagePreview}` : messagePreview)
+                        : messagePreview;
+                        
+                      return (
+                        <List.Item 
+                          onClick={() => handleSelectConversation(item)}
+                          style={{ 
+                            cursor: "pointer", 
+                            padding: "12px 16px",
+                            background: currentConversation?.id === item.id ? lightGray : "transparent",
+                            transition: "background 0.3s"
+                          }}
+                          key={item.id}
+                        >
+                          <List.Item.Meta
+                            avatar={
+                              <Avatar 
+                                src={item.image} 
+                                size={48}
+                                style={{ 
+                                  backgroundColor: !item.image ? brandPrimary : undefined 
+                                }}
+                              >
+                                {!item.image && item.name?.charAt(0).toUpperCase()}
+                              </Avatar>
+                            }
+                            title={<Text strong>{item.name}</Text>}
+                            description={
+                              <Text type="secondary" ellipsis style={{ maxWidth: '100%' }}>
+                                {messageDisplay}
+                              </Text>
+                            }
+                          />
+                        </List.Item>
+                      );
+                    }}
                   />
                 )}
               </>

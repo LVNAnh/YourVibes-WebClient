@@ -32,13 +32,14 @@ export const useMessagesViewModel = () => {
   const [messageText, setMessageText] = useState<string>("");
   const [isMessagesEnd, setIsMessagesEnd] = useState<boolean>(false);
 
-  // Pagination for messages
+  // Pagination for messages - Khởi tạo trang cuối cùng để load tin nhắn mới nhất trước
   const [currentPage, setCurrentPage] = useState<number>(1);
   const pageSize = 20;
   
   // Ref for message list for scrolling
   const messageListRef = useRef<HTMLDivElement>(null);
   const lastMessageRef = useRef<string | null>(null);
+  const initialLoadRef = useRef<boolean>(false);
 
   // Initialize by loading conversations
   useEffect(() => {
@@ -70,29 +71,46 @@ export const useMessagesViewModel = () => {
   // Update messages from WebSocket when conversation changes
   useEffect(() => {
     if (currentConversation?.id) {
-      // Set current conversation ID in WebSocket context
+      // Luôn xóa messages trước để tránh hiện tin nhắn cũ
+      setMessages([]);
+      
+      // Cập nhật ID cuộc trò chuyện hiện tại trong WebSocket
       setCurrentConversationId(currentConversation.id);
       
-      // Get messages from WebSocket context for this conversation
+      // Reset cờ tải ban đầu khi chuyển cuộc trò chuyện
+      initialLoadRef.current = false;
+      
+      // Lấy tin nhắn từ WebSocket context cho cuộc trò chuyện này
       const wsMessages = getMessagesForConversation(currentConversation.id);
       if (wsMessages && wsMessages.length > 0) {
-        setMessages(wsMessages);
+        // Đảm bảo tin nhắn không bị trùng lặp
+        const uniqueMessages = Array.from(
+          new Map(wsMessages.map(msg => [msg.id, msg])).values()
+        ).sort((a, b) => {
+          const dateA = new Date(a.created_at || "");
+          const dateB = new Date(b.created_at || "");
+          return dateA.getTime() - dateB.getTime();
+        });
+        
+        setMessages(uniqueMessages);
       } else {
-        // If no messages in WebSocket context, fetch from API
-        fetchMessages(currentConversation.id);
+        // Nếu không có tin nhắn trong WebSocket context, fetch từ API
+        fetchLatestMessages(currentConversation.id);
       }
     }
   }, [currentConversation?.id]);
+  
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {
     if (messages.length > 0) {
       const lastMessage = messages[messages.length - 1];
       
-      // Only scroll to bottom if it's a new message
-      if (lastMessageRef.current !== lastMessage.id) {
+      // Only scroll to bottom if it's a new message or initial load
+      if (lastMessageRef.current !== lastMessage.id || !initialLoadRef.current) {
         scrollToBottom();
         lastMessageRef.current = lastMessage.id || null;
+        initialLoadRef.current = true;
       }
     }
   }, [messages]);
@@ -126,7 +144,52 @@ export const useMessagesViewModel = () => {
     }
   };
 
-  // Function to fetch messages for a conversation
+  // Hàm mới để tải tin nhắn mới nhất trước
+  const fetchLatestMessages = async (conversationId: string) => {
+    if (!user?.id || !conversationId) return;
+    
+    setMessagesLoading(true);
+    try {
+      const response = await defaultMessagesRepo.getMessagesByConversationId({
+        conversation_id: conversationId,
+        limit: pageSize,
+        page: 1
+      });
+      
+      if (response.data) {
+        // Chuyển đổi thành mảng nếu chưa phải
+        const messageList = Array.isArray(response.data) ? response.data : [response.data];
+        
+        // Sắp xếp tin nhắn theo thời gian tạo
+        const sortedMessages = messageList.sort((a, b) => {
+          const dateA = new Date(a.created_at || "");
+          const dateB = new Date(b.created_at || "");
+          return dateA.getTime() - dateB.getTime();
+        });
+        
+        // Kiểm tra xem đã đến cuối tin nhắn chưa
+        setIsMessagesEnd(messageList.length < pageSize);
+        
+        // Cập nhật messages trong WebSocket context trước
+        updateMessagesForConversation(conversationId, sortedMessages);
+        
+        // Sau đó lấy lại từ context để cập nhật state
+        const contextMessages = getMessagesForConversation(conversationId);
+        setMessages(contextMessages);
+        
+        // Reset current page
+        setCurrentPage(1);
+      }
+    } catch (error) {
+      console.error("Error fetching latest messages:", error);
+    } finally {
+      setMessagesLoading(false);
+      // Cuộn xuống dưới sau khi tải tin nhắn mới nhất
+      setTimeout(scrollToBottom, 100);
+    }
+  };
+
+  // Function to fetch messages for a conversation (để load more)
   const fetchMessages = async (conversationId: string, page: number = 1, append: boolean = false) => {
     if (!user?.id || !conversationId) return;
     
@@ -156,7 +219,7 @@ export const useMessagesViewModel = () => {
         if (append) {
           setMessages(prev => {
             // Merge and deduplicate messages
-            const combined = [...prev, ...sortedMessages];
+            const combined = [...sortedMessages, ...prev];
             const uniqueMessages = Array.from(
               new Map(combined.map(item => [item.id, item])).values()
             );
@@ -171,7 +234,20 @@ export const useMessagesViewModel = () => {
         }
         
         // Update messages in WebSocket context
-        updateMessagesForConversation(conversationId, sortedMessages);
+        if (append) {
+          const existingMessages = getMessagesForConversation(conversationId);
+          const combinedMessages = [...sortedMessages, ...existingMessages];
+          const uniqueCombined = Array.from(
+            new Map(combinedMessages.map(item => [item.id, item])).values()
+          ).sort((a, b) => {
+            const dateA = new Date(a.created_at || "");
+            const dateB = new Date(b.created_at || "");
+            return dateA.getTime() - dateB.getTime();
+          });
+          updateMessagesForConversation(conversationId, uniqueCombined);
+        } else {
+          updateMessagesForConversation(conversationId, sortedMessages);
+        }
       }
     } catch (error) {
       console.error("Error fetching messages:", error);
@@ -334,7 +410,7 @@ export const useMessagesViewModel = () => {
       
       // Fetch messages again to reset state
       if (currentConversation.id) {
-        fetchMessages(currentConversation.id);
+        fetchLatestMessages(currentConversation.id);
       }
     }
   };
@@ -434,6 +510,10 @@ export const useMessagesViewModel = () => {
       if (conversation?.id) {
         markConversationAsRead(conversation.id);
       }
+    },
+
+    getMessagesForConversation: (conversationId: string) => {
+      return getMessagesForConversation(conversationId);
     },
     
     // Actions
