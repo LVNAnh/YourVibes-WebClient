@@ -368,7 +368,6 @@ const MessagesFeature: React.FC = () => {
                           
                           {/* Message list */}
                           {messages.map((msg: MessageResponseModel) => (
-                            // @ts-ignore - isDateSeparator không có trong MessageResponseModel gốc
                             msg.isDateSeparator ? (
                               <DateSeparator 
                                 key={msg.id} 

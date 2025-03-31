@@ -50,4 +50,6 @@ export interface MessageResponseModel {
 
     fromServer?: boolean,
     sendFailed?: boolean
+
+    isDateSeparator?: boolean;
 }

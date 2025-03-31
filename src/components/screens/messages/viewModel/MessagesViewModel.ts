@@ -116,29 +116,43 @@ export const useMessagesViewModel = () => {
   }, [initialMessagesLoaded, messages]);
 
   const formatDateForDisplay = (date: Date): string => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Lấy ngày hiện tại theo múi giờ cục bộ (không phải UTC)
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     
+    // Ngày hôm qua
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
     
-    const messageDay = new Date(date);
-    messageDay.setHours(0, 0, 0, 0);
+    // Lấy ngày của tin nhắn theo múi giờ cục bộ
+    const messageDate = new Date(date);
+    const messageDay = new Date(
+      messageDate.getFullYear(),
+      messageDate.getMonth(),
+      messageDate.getDate()
+    );
     
-    // Kiểm tra nếu là hôm nay, hôm qua, hoặc ngày khác
+    console.log("So sánh ngày (local time): ", {
+      messageTime: messageDate.toString(),
+      messageDay: messageDay.toString(),
+      today: today.toString(),
+      yesterday: yesterday.toString(),
+      isToday: messageDay.getTime() === today.getTime(),
+      isYesterday: messageDay.getTime() === yesterday.getTime()
+    });
+  
+    // So sánh ngày
     if (messageDay.getTime() === today.getTime()) {
       return "Hôm nay";
     } else if (messageDay.getTime() === yesterday.getTime()) {
       return "Hôm qua";
     } else {
-      // Định dạng: Thứ 2, 15 tháng 4, 2023
-      const options: Intl.DateTimeFormatOptions = { 
-        weekday: 'long', 
-        day: 'numeric', 
-        month: 'long', 
-        year: 'numeric' 
-      };
-      return date.toLocaleDateString('vi-VN', options);
+      // Định dạng: DD/MM/YYYY
+      const day = messageDate.getDate().toString().padStart(2, '0');
+      const month = (messageDate.getMonth() + 1).toString().padStart(2, '0');
+      const year = messageDate.getFullYear();
+      
+      return `${day}/${month}/${year}`;
     }
   };
   
@@ -146,23 +160,41 @@ export const useMessagesViewModel = () => {
   const processMessagesWithDateSeparators = (messages: MessageResponseModel[]): MessageWithDate[] => {
     if (!messages || messages.length === 0) return [];
   
+    console.log("Bắt đầu xử lý tin nhắn để thêm phân cách ngày. Số tin nhắn:", messages.length);
+    
     const processedMessages: MessageWithDate[] = [];
     let currentDate: string | null = null;
   
-    // Duyệt qua từng tin nhắn để thêm ngày phân cách
-    messages.forEach((message) => {
-      if (message.created_at) {
-        const messageDate = new Date(message.created_at);
-        const messageDateStr = messageDate.toISOString().split('T')[0]; // YYYY-MM-DD
+    // Sắp xếp tin nhắn theo thời gian trước khi xử lý
+    const sortedMessages = [...messages].sort((a, b) => {
+      const dateA = new Date(a.created_at || "");
+      const dateB = new Date(b.created_at || "");
+      return dateA.getTime() - dateB.getTime();
+    });
   
-        // Nếu đây là ngày mới, thêm tin nhắn phân cách
+    // Duyệt qua từng tin nhắn để thêm ngày phân cách
+    sortedMessages.forEach((message) => {
+      if (message.created_at) {
+        // Tạo đối tượng Date từ chuỗi created_at
+        const messageDate = new Date(message.created_at);
+        
+        // Tạo chuỗi chỉ bao gồm năm-tháng-ngày (không có giờ) để so sánh ngày
+        // Format: YYYY-MM-DD
+        const messageDateStr = messageDate.toISOString().split('T')[0];
+  
+        // Nếu đây là ngày mới (khác với ngày hiện tại đang xử lý), thêm phân cách ngày
         if (messageDateStr !== currentDate) {
           currentDate = messageDateStr;
+          
+          // Định dạng hiển thị ngày cho phân cách
+          const formattedDate = formatDateForDisplay(messageDate);
+          
+          console.log(`Thêm phân cách cho ngày: ${messageDateStr}, hiển thị: ${formattedDate}`);
           
           // Tạo tin nhắn phân cách ngày
           const dateSeparator: MessageWithDate = {
             id: `date-separator-${messageDateStr}`,
-            content: formatDateForDisplay(messageDate),
+            content: formattedDate,
             isDateSeparator: true,
             created_at: message.created_at,
           };
@@ -307,10 +339,21 @@ export const useMessagesViewModel = () => {
             }
           }, 50);
         } else {
-          // Initial load - replace messages completely with sorted messages
-          setMessages(sortedApiMessages);
+          // Initial load - process messages with date separators
+          console.log("Tin nhắn trước khi xử lý:", sortedApiMessages);
           
-          // Update in WebSocket context
+          // Xử lý tin nhắn để thêm phân cách ngày
+          const messagesWithDateSeparators = processMessagesWithDateSeparators(sortedApiMessages);
+          console.log("Tin nhắn sau khi xử lý với phân cách ngày:", messagesWithDateSeparators);
+          
+          // Kiểm tra xem có phân cách ngày nào được tạo không
+          const separators = messagesWithDateSeparators.filter(msg => msg.isDateSeparator);
+          console.log("Số lượng phân cách ngày:", separators.length);
+          
+          // Update messages state với tin nhắn đã có phân cách ngày
+          setMessages(messagesWithDateSeparators);
+          
+          // Update in WebSocket context chỉ với tin nhắn gốc
           updateMessagesForConversation(conversationId, sortedApiMessages);
           
           // Mark that we've loaded initial messages
