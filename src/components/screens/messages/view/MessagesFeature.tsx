@@ -3,14 +3,15 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/context/auth/useAuth";
 import { useMessagesViewModel } from "../viewModel/MessagesViewModel";
-import { Avatar, Button, Empty, Input, Layout, List, Skeleton, Spin, Typography, message, Badge } from "antd";
-import { SendOutlined, EllipsisOutlined, SearchOutlined, ArrowLeftOutlined, PlusOutlined, WifiOutlined, DisconnectOutlined } from "@ant-design/icons";
+import { Avatar, Button, Empty, Input, Layout, List, Skeleton, Spin, Typography, Popover } from "antd";
+import { SendOutlined, EllipsisOutlined, SearchOutlined, ArrowLeftOutlined, PlusOutlined, SmileOutlined } from "@ant-design/icons";
 import useColor from "@/hooks/useColor";
 import { ConversationResponseModel } from "@/api/features/messages/models/ConversationModel";
 import { MessageResponseModel } from "@/api/features/messages/models/MessageModel";
 import NewConversationModal from "./NewConversationModal";
 import MessageItem from "./MessageItem";
 import DateSeparator from "./DateSeparator";
+import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react';
 
 const { Header, Content, Sider } = Layout;
 const { Search } = Input;
@@ -18,6 +19,7 @@ const { Text, Title } = Typography;
 
 const MessagesFeature: React.FC = () => {
   const { user, localStrings } = useAuth();
+  const [emojiPickerVisible, setEmojiPickerVisible] = useState(false);
   const {
     deleteMessage,
     createConversation,
@@ -32,7 +34,6 @@ const MessagesFeature: React.FC = () => {
     setMessageText,
     setCurrentConversation,
     sendMessage,
-    fetchConversations,
     fetchMessages,
     isMessagesEnd,
     loadMoreMessages,
@@ -67,6 +68,10 @@ const MessagesFeature: React.FC = () => {
       setShowConversation(false);
     }
   }, [currentConversation, isMobile]);
+
+  const onEmojiClick = (emojiData: EmojiClickData) => {
+    setMessageText(prev => prev + emojiData.emoji);
+  };
 
   // Handle message send
   const handleSendMessage = () => {
@@ -185,20 +190,27 @@ const MessagesFeature: React.FC = () => {
                   <List
                     dataSource={filteredConversations}
                     renderItem={(item) => {
-                      // Lấy tin nhắn cuối cùng của cuộc trò chuyện
+                      // Lấy tin nhắn của cuộc trò chuyện từ WebSocket context
                       const conversationMessages = getMessagesForConversation(item.id || '');
-                      const lastMessage = conversationMessages.length > 0 
-                        ? conversationMessages[conversationMessages.length - 1] 
+                      
+                      // Lọc bỏ các tin nhắn phân cách ngày (nếu có)
+                      const actualMessages = conversationMessages.filter(msg => !msg.isDateSeparator);
+                      
+                      // Lấy tin nhắn mới nhất (phần tử cuối trong mảng đã sắp xếp theo thời gian)
+                      const lastMessage = actualMessages.length > 0 
+                        ? actualMessages.sort((a, b) => 
+                            new Date(b.created_at || "").getTime() - new Date(a.created_at || "").getTime()
+                          )[0]
                         : null;
                       
                       // Hiển thị tin nhắn cuối hoặc thông báo mặc định
                       const messagePreview = lastMessage?.content 
-                        ? lastMessage.content
-                        : (localStrings.Messages.StartConversation || "Start chatting");
+                        ? (lastMessage.content.length > 50 ? lastMessage.content.substring(0, 47) + '...' : lastMessage.content)
+                        : (localStrings.Messages?.StartConversation || "Start chatting");
                       
                       // Định dạng tên người gửi nếu có
                       const senderName = lastMessage?.user_id === user?.id 
-                        ? (localStrings.Messages.You || "You") 
+                        ? (localStrings.Messages?.You || "You") 
                         : lastMessage?.user 
                           ? `${lastMessage.user.family_name || ''} ${lastMessage.user.name || ''}`.trim()
                           : '';
@@ -207,6 +219,11 @@ const MessagesFeature: React.FC = () => {
                       const messageDisplay = lastMessage 
                         ? (senderName ? `${senderName}: ${messagePreview}` : messagePreview)
                         : messagePreview;
+                      
+                      // Định dạng thời gian tin nhắn cuối cùng
+                      const lastMessageTime = lastMessage?.created_at
+                        ? formatMessageTime(lastMessage.created_at)
+                        : '';
                         
                       return (
                         <List.Item 
@@ -238,6 +255,13 @@ const MessagesFeature: React.FC = () => {
                               </Text>
                             }
                           />
+                          {lastMessage && (
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                              <Text type="secondary" style={{ fontSize: '12px' }}>
+                                {lastMessageTime}
+                              </Text>
+                            </div>
+                          )}
                         </List.Item>
                       );
                     }}
@@ -410,8 +434,31 @@ const MessagesFeature: React.FC = () => {
           }}>
             {currentConversation && (
               <>
+                <Popover
+                  content={
+                    <EmojiPicker 
+                      onEmojiClick={onEmojiClick}
+                      searchPlaceholder="Tìm emoji..."
+                      width={300}
+                      height={400}
+                      theme={Theme.LIGHT}
+                      lazyLoadEmojis={true}
+                    />
+                  }
+                  trigger="click"
+                  open={emojiPickerVisible}
+                  onOpenChange={setEmojiPickerVisible}
+                  placement="topRight"
+                >
+                  <Button
+                    type="text"
+                    icon={<SmileOutlined style={{ fontSize: "20px", color: "#666" }} />}
+                    style={{ marginRight: 8 }}
+                  />
+                </Popover>
+                
                 <Input
-                  placeholder={localStrings.Messages.TypeMessage || "Type a message..."}
+                  placeholder={localStrings.Messages?.TypeMessage || "Type a message..."}
                   value={messageText}
                   onChange={(e) => setMessageText(e.target.value)}
                   onKeyPress={handleKeyPress}
@@ -422,6 +469,7 @@ const MessagesFeature: React.FC = () => {
                   }}
                   disabled={!isWebSocketConnected}
                 />
+                
                 <Button
                   type="primary"
                   shape="circle"

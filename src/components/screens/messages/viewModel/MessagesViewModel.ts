@@ -211,33 +211,73 @@ export const useMessagesViewModel = () => {
   };
 
   // Function to fetch conversations
-  const fetchConversations = async () => {
-    if (!user?.id) return;
+  // Cập nhật hàm fetchConversations trong file src/components/screens/messages/viewModel/MessagesViewModel.ts
+
+const fetchConversations = async () => {
+  if (!user?.id) return;
+  
+  setConversationsLoading(true);
+  try {
+    const response = await defaultMessagesRepo.getConversations({
+      limit: 50,
+      page: 1
+    });
     
-    setConversationsLoading(true);
-    try {
-      const response = await defaultMessagesRepo.getConversations({
-        limit: 50,
-        page: 1
+    if (response.data) {
+      // Cập nhật state cục bộ
+      const conversationsList = Array.isArray(response.data) 
+        ? response.data 
+        : [response.data];
+      setConversations(conversationsList);
+      
+      // Cập nhật WebSocket context
+      updateConversations(conversationsList);
+      
+      // Tải tin nhắn mới nhất cho mỗi cuộc trò chuyện đã lấy
+      // Sử dụng Promise.all để tối ưu tốc độ tải
+      const fetchMessagesPromises = conversationsList.map(async (conversation) => {
+        if (conversation.id) {
+          try {
+            const messageResponse = await defaultMessagesRepo.getMessagesByConversationId({
+              conversation_id: conversation.id,
+              sort_by: "created_at",
+              is_descending: true,
+              limit: 1,
+              page: 1
+            });
+            
+            if (messageResponse.data) {
+              const messageList = Array.isArray(messageResponse.data) 
+                ? messageResponse.data 
+                : [messageResponse.data];
+              
+              if (messageList.length > 0) {
+                const formattedMessages = messageList.map(msg => ({
+                  ...msg,
+                  fromServer: true,
+                  isTemporary: false
+                }));
+                
+                // Cập nhật tin nhắn vào WebSocket context để sử dụng trong sidebar
+                updateMessagesForConversation(conversation.id, formattedMessages);
+              }
+            }
+          } catch (error) {
+            console.error(`Error fetching messages for conversation ${conversation.id}:`, error);
+          }
+        }
       });
       
-      if (response.data) {
-        // Update local state
-        const conversationsList = Array.isArray(response.data) 
-          ? response.data 
-          : [response.data];
-        setConversations(conversationsList);
-        
-        // Update WebSocket context
-        updateConversations(conversationsList);
-      }
-    } catch (error) {
-      console.error("Error fetching conversations:", error);
-      message.error(localStrings.Messages?.ErrorFetchingConversations || "Error fetching conversations");
-    } finally {
-      setConversationsLoading(false);
+      // Chờ tất cả các yêu cầu lấy tin nhắn hoàn thành
+      await Promise.all(fetchMessagesPromises);
     }
-  };
+  } catch (error) {
+    console.error("Error fetching conversations:", error);
+    message.error(localStrings.Messages?.ErrorFetchingConversations || "Error fetching conversations");
+  } finally {
+    setConversationsLoading(false);
+  }
+};
 
   // Function to fetch messages for a conversation
   const fetchMessages = async (conversationId: string, page: number = 1, shouldAppend: boolean = false) => {
