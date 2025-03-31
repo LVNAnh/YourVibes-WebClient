@@ -13,6 +13,9 @@ export interface CreateMessageRequestModel {
 
 export interface GetMessagesByConversationIdRequestModel {
     conversation_id?: string,
+    created_at?: string,
+    sort_by?: string,
+    is_descending?: boolean,
     page?: number,
     limit?: number
 }

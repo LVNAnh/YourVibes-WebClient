@@ -31,15 +31,17 @@ export const useMessagesViewModel = () => {
   const [searchText, setSearchText] = useState<string>("");
   const [messageText, setMessageText] = useState<string>("");
   const [isMessagesEnd, setIsMessagesEnd] = useState<boolean>(false);
+  const [initialMessagesLoaded, setInitialMessagesLoaded] = useState<boolean>(false);
 
-  // Pagination for messages - Khởi tạo trang cuối cùng để load tin nhắn mới nhất trước
+  // Pagination for messages
   const [currentPage, setCurrentPage] = useState<number>(1);
   const pageSize = 20;
   
   // Ref for message list for scrolling
   const messageListRef = useRef<HTMLDivElement>(null);
   const lastMessageRef = useRef<string | null>(null);
-  const initialLoadRef = useRef<boolean>(false);
+  const isFirstLoad = useRef<boolean>(true);
+  const scrollPositionRef = useRef<number>(0);
 
   // Initialize by loading conversations
   useEffect(() => {
@@ -62,46 +64,50 @@ export const useMessagesViewModel = () => {
       // Only update UI if this is the current conversation
       if (conversationId === currentConversation?.id) {
         setMessages(updatedMessages);
+        
+        // Auto-scroll to bottom for new messages
+        if (updatedMessages.length > 0 && messages.length > 0) {
+          const lastOldMessageId = messages[messages.length - 1]?.id;
+          const lastNewMessageId = updatedMessages[updatedMessages.length - 1]?.id;
+          
+          if (lastOldMessageId !== lastNewMessageId) {
+            setTimeout(scrollToBottom, 100);
+          }
+        }
       }
     });
     
     return unsubscribe;
-  }, [addMessageListener, currentConversation?.id]);
+  }, [addMessageListener, currentConversation?.id, messages]);
 
   // Update messages from WebSocket when conversation changes
   useEffect(() => {
     if (currentConversation?.id) {
-      // Luôn xóa messages trước để tránh hiện tin nhắn cũ
+      // Always clear messages first to avoid showing old messages
       setMessages([]);
+      setInitialMessagesLoaded(false);
+      isFirstLoad.current = true;
       
-      // Cập nhật ID cuộc trò chuyện hiện tại trong WebSocket
+      // Update current conversation ID in WebSocket
       setCurrentConversationId(currentConversation.id);
       
-      // Reset cờ tải ban đầu khi chuyển cuộc trò chuyện
-      initialLoadRef.current = false;
+      // Reset pagination
+      setCurrentPage(1);
+      setIsMessagesEnd(false);
       
-      // Sử dụng timeout để đảm bảo state đã được cập nhật
-      setTimeout(() => {
-        // Luôn lấy tin nhắn từ API để đảm bảo dữ liệu mới nhất
-        fetchLatestMessages(currentConversation.id);
-      }, 50);
+      // Immediately fetch messages for this conversation
+      fetchMessages(currentConversation.id, 1, false);
     }
   }, [currentConversation?.id]);
-  
 
-  // Scroll to bottom when new messages arrive
+  // Scroll to bottom when initial messages are loaded
   useEffect(() => {
-    if (messages.length > 0) {
-      const lastMessage = messages[messages.length - 1];
-      
-      // Only scroll to bottom if it's a new message or initial load
-      if (lastMessageRef.current !== lastMessage.id || !initialLoadRef.current) {
-        scrollToBottom();
-        lastMessageRef.current = lastMessage.id || null;
-        initialLoadRef.current = true;
-      }
+    if (initialMessagesLoaded && messages.length > 0 && isFirstLoad.current) {
+      // Đảm bảo cuộn xuống tin nhắn mới nhất sau khi tải
+      setTimeout(scrollToBottom, 100);
+      isFirstLoad.current = false;
     }
-  }, [messages]);
+  }, [initialMessagesLoaded, messages]);
 
   // Function to fetch conversations
   const fetchConversations = async () => {
@@ -126,88 +132,53 @@ export const useMessagesViewModel = () => {
       }
     } catch (error) {
       console.error("Error fetching conversations:", error);
-      message.error(localStrings.Messages.ErrorFetchingConversations || "Error fetching conversations");
+      message.error(localStrings.Messages?.ErrorFetchingConversations || "Error fetching conversations");
     } finally {
       setConversationsLoading(false);
     }
   };
 
-  // Hàm mới để tải tin nhắn mới nhất trước
-  const fetchLatestMessages = async (conversationId: string) => {
+  // Function to fetch messages for a conversation
+  const fetchMessages = async (conversationId: string, page: number = 1, shouldAppend: boolean = false) => {
     if (!user?.id || !conversationId) return;
     
     setMessagesLoading(true);
-    try {
-      const response = await defaultMessagesRepo.getMessagesByConversationId({
-        conversation_id: conversationId,
-        limit: pageSize,
-        page: 1
-      });
-      
-      if (response.data) {
-        // Chuyển đổi thành mảng nếu chưa phải
-        const messageList = Array.isArray(response.data) ? response.data : [response.data];
-        
-        // Sắp xếp tin nhắn theo thời gian tạo
-        const sortedMessages = messageList.sort((a, b) => {
-          const dateA = new Date(a.created_at || "");
-          const dateB = new Date(b.created_at || "");
-          return dateA.getTime() - dateB.getTime();
-        });
-        
-        // Kiểm tra xem đã đến cuối tin nhắn chưa
-        setIsMessagesEnd(messageList.length < pageSize);
-        
-        // Cập nhật messages trong WebSocket context
-        updateMessagesForConversation(conversationId, sortedMessages);
-        
-        // Sau đó lấy lại từ context để cập nhật state
-        const contextMessages = getMessagesForConversation(conversationId);
-        setMessages(contextMessages);
-        
-        // Reset current page
-        setCurrentPage(1);
-      }
-    } catch (error) {
-      console.error("Error fetching latest messages:", error);
-    } finally {
-      setMessagesLoading(false);
-      // Cuộn xuống dưới sau khi tải tin nhắn mới nhất
-      setTimeout(scrollToBottom, 100);
+    
+    // Save current scroll position for older message loading
+    if (shouldAppend && messageListRef.current) {
+      scrollPositionRef.current = messageListRef.current.scrollHeight - messageListRef.current.scrollTop;
     }
-  };
-
-  // Function to fetch messages for a conversation (để load more)
-  const fetchMessages = async (conversationId: string, page: number = 1, append: boolean = false) => {
-    if (!user?.id || !conversationId) return;
     
-    setMessagesLoading(true);
     try {
+      // Yêu cầu tin nhắn được sắp xếp mới nhất trước (giảm dần theo created_at)
       const response = await defaultMessagesRepo.getMessagesByConversationId({
         conversation_id: conversationId,
         limit: pageSize,
-        page: page
+        page: page,
+        sort_by: "created_at",
+        isDescending: true // Đảm bảo lấy tin nhắn mới nhất trước
       });
       
       if (response.data) {
         // Convert to array if not already
         const messageList = Array.isArray(response.data) ? response.data : [response.data];
         
-        // Sort messages by created_at
-        const sortedMessages = messageList.sort((a, b) => {
-          const dateA = new Date(a.created_at || "");
-          const dateB = new Date(b.created_at || "");
-          return dateA.getTime() - dateB.getTime();
-        });
-        
         // Check if we've reached the end of messages
         setIsMessagesEnd(messageList.length < pageSize);
         
-        // Get existing messages from context 
-        const existingMessages = getMessagesForConversation(conversationId);
+        // Add fromServer flag to all messages from API
+        const formattedMessages = messageList.map(msg => ({
+          ...msg,
+          fromServer: true,
+          isTemporary: false
+        }));
         
-        if (append) {
-          // When loading more messages, merge with existing ones
+        // Get existing messages
+        let existingMessages = shouldAppend ? [...messages] : [];
+        
+        if (shouldAppend) {
+          // When loading older messages (tải thêm tin nhắn cũ hơn)
+          
           // First, create a map of existing messages by ID for quick lookup
           const existingMessageMap = new Map();
           existingMessages.forEach(msg => {
@@ -216,20 +187,52 @@ export const useMessagesViewModel = () => {
             }
           });
           
-          // Only add messages that don't already exist
-          const newMessages = sortedMessages.filter(msg => !msg.id || !existingMessageMap.has(msg.id));
+          // Filter out duplicates
+          const uniqueNewMessages = formattedMessages.filter(msg => 
+            !msg.id || !existingMessageMap.has(msg.id)
+          );
           
-          // Update WebSocket context with merged messages
-          const combinedMessages = [...newMessages, ...existingMessages];
-          updateMessagesForConversation(conversationId, combinedMessages);
-        } else {
-          // When fetching initial messages, replace existing ones
+          // Khi tải thêm tin nhắn cũ, thêm vào danh sách hiện có
+          // Vì API trả về tin nhắn mới nhất trước, nên thêm tin nhắn hiện có vào sau các tin nhắn mới
+          const updatedMessages = [...existingMessages, ...uniqueNewMessages];
+          
+          // Sắp xếp lại tin nhắn theo thời gian tăng dần (cũ -> mới) để hiển thị đúng
+          const sortedMessages = updatedMessages.sort((a, b) => {
+            const dateA = new Date(a.created_at || "");
+            const dateB = new Date(b.created_at || "");
+            return dateA.getTime() - dateB.getTime();
+          });
+          
+          // Update messages state
+          setMessages(sortedMessages);
+          
+          // Update in WebSocket context too
           updateMessagesForConversation(conversationId, sortedMessages);
+          
+          // Restore scroll position when loading older messages
+          setTimeout(() => {
+            if (messageListRef.current) {
+              messageListRef.current.scrollTop = 
+                messageListRef.current.scrollHeight - scrollPositionRef.current;
+            }
+          }, 50);
+        } else {
+          // Initial load - replace messages completely
+          // Sắp xếp lại tin nhắn theo thời gian tăng dần (cũ -> mới) để hiển thị đúng
+          const sortedMessages = formattedMessages.sort((a, b) => {
+            const dateA = new Date(a.created_at || "");
+            const dateB = new Date(b.created_at || "");
+            return dateA.getTime() - dateB.getTime();
+          });
+          
+          setMessages(sortedMessages);
+          
+          // Update in WebSocket context
+          updateMessagesForConversation(conversationId, sortedMessages);
+          
+          // Mark that we've loaded initial messages
+          setInitialMessagesLoaded(true);
         }
-        
-        // Get updated messages from context and update state
-        const updatedMessages = getMessagesForConversation(conversationId);
-        setMessages(updatedMessages);
       }
     } catch (error) {
       console.error("Error fetching messages:", error);
@@ -240,9 +243,11 @@ export const useMessagesViewModel = () => {
 
   // Function to load more messages (older messages)
   const loadMoreMessages = async () => {
-    if (currentConversation?.id && !messagesLoading) {
+    if (currentConversation?.id && !messagesLoading && !isMessagesEnd) {
       const nextPage = currentPage + 1;
       setCurrentPage(nextPage);
+      // Khi nhấn "Load more", chúng ta đang tải thêm tin nhắn cũ hơn
+      // Đã cập nhật fetchMessages để xử lý đúng khi shouldAppend=true
       await fetchMessages(currentConversation.id, nextPage, true);
     }
   };
@@ -286,7 +291,7 @@ export const useMessagesViewModel = () => {
       return null;
     } catch (error) {
       console.error("Error creating conversation:", error);
-      message.error(localStrings.Messages.GroupCreationFailed || "Failed to create conversation");
+      message.error(localStrings.Messages?.GroupCreationFailed || "Failed to create conversation");
       return null;
     }
   };
@@ -299,7 +304,7 @@ export const useMessagesViewModel = () => {
     
     // Message length validation
     if (messageText.length > 500) {
-      message.error(localStrings.Messages.MessageTooLong || "Message too long");
+      message.error(localStrings.Messages?.MessageTooLong || "Message too long");
       return;
     }
     
@@ -328,6 +333,9 @@ export const useMessagesViewModel = () => {
     
     // Clear input field
     setMessageText("");
+    
+    // Scroll to bottom after sending
+    scrollToBottom();
     
     try {
       // Send the message to the server via API
@@ -369,11 +377,8 @@ export const useMessagesViewModel = () => {
         )
       );
       
-      message.error(localStrings.Public.Error || "Failed to send message");
+      message.error(localStrings.Public?.Error || "Failed to send message");
     }
-    
-    // Scroll to bottom after sending
-    scrollToBottom();
   };
 
   // Function to delete a message
@@ -388,11 +393,11 @@ export const useMessagesViewModel = () => {
       await defaultMessagesRepo.deleteMessage({ message_id: messageId });
     } catch (error) {
       console.error("Error deleting message:", error);
-      message.error(localStrings.Public.Error || "Error deleting message");
+      message.error(localStrings.Public?.Error || "Error deleting message");
       
       // Fetch messages again to reset state
       if (currentConversation.id) {
-        fetchLatestMessages(currentConversation.id);
+        fetchMessages(currentConversation.id);
       }
     }
   };
@@ -437,7 +442,7 @@ export const useMessagesViewModel = () => {
       return null;
     } catch (error) {
       console.error("Error updating conversation:", error);
-      message.error(localStrings.Public.Error || "Error updating conversation");
+      message.error(localStrings.Public?.Error || "Error updating conversation");
       return null;
     }
   };
@@ -476,17 +481,13 @@ export const useMessagesViewModel = () => {
     isMessagesEnd,
     isWebSocketConnected,
     messageListRef,
+    initialMessagesLoaded,
     
     // Setters
     setSearchText,
     setMessageText,
     setCurrentConversation: (conversation: ConversationResponseModel | null) => {
       setCurrentConversation(conversation);
-      setCurrentPage(1);
-      setIsMessagesEnd(false);
-      
-      // Reset message list when changing conversations
-      setMessages([]);
       
       // Mark conversation as read when selected
       if (conversation?.id) {

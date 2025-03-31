@@ -39,6 +39,7 @@ const MessagesFeature: React.FC = () => {
     messageListRef,
     handleScroll,
     getMessagesForConversation,
+    initialMessagesLoaded,
   } = useMessagesViewModel();
 
   const [isMobile, setIsMobile] = useState(false);
@@ -316,64 +317,74 @@ const MessagesFeature: React.FC = () => {
             onScroll={handleScroll}
           >
             {currentConversation ? (
-              messagesLoading && messages.length === 0 ? (
-                <div style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center" }}>
-                  <Spin size="large" />
-                </div>
-              ) : (
-                <>
-                  {!isMessagesEnd && (
-                    <div style={{ textAlign: "center", padding: "10px 0" }}>
-                      <Button onClick={loadMoreMessages} loading={messagesLoading}>
-                        {localStrings.Public.LoadMore || "Load more"}
-                      </Button>
-                    </div>
-                  )}
-                  <div style={{ flex: 1 }}>
-                    {messages.length > 0 ? (
-                      <>
-                        {/* Network indicator */}
-                        <div style={{
-                          position: "absolute",
-                          top: 0,
-                          right: 16,
-                          padding: "4px 8px",
-                          borderRadius: "0 0 4px 4px",
-                          backgroundColor: navigator.onLine ? "#4CAF50" : "#F44336",
-                          color: "white",
-                          fontSize: 12,
-                          opacity: 0.8,
-                          zIndex: 1
-                        }}>
-                          {navigator.onLine ? "Online" : "Offline"}
-                        </div>
-                        
-                        {/* Message list */}
-                        {messages.map((msg: MessageResponseModel) => (
-                          <MessageItem 
-                            key={msg.id} 
-                            message={msg} 
-                            onDelete={deleteMessage}
-                          />
-                        ))}
-                        
-                        {/* Loading indicator when fetching more messages */}
-                        {messagesLoading && messages.length > 0 && (
-                          <div style={{ textAlign: "center", padding: "10px 0" }}>
-                            <Spin size="small" />
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <Empty
-                        description={localStrings.Messages.NoMessages || "No messages yet"}
-                        image={Empty.PRESENTED_IMAGE_SIMPLE}
-                        style={{ marginTop: 40 }}
-                      />
-                    )}
+              <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                {/* Loading indicator for initial load */}
+                {messagesLoading && messages.length === 0 ? (
+                  <div style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center" }}>
+                    <Spin size="large" />
                   </div>
-                </>
-              )
+                ) : (
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                    {/* Load More Button - only show when we have messages and not at the end */}
+                    {messages.length > 0 && !isMessagesEnd && (
+                      <div style={{ textAlign: "center", padding: "10px 0" }}>
+                        <Button 
+                          onClick={loadMoreMessages} 
+                          loading={messagesLoading}
+                          disabled={messagesLoading}
+                        >
+                          {localStrings.Public.LoadMore || "Load more"}
+                        </Button>
+                      </div>
+                    )}
+                    
+                    {/* Loading indicator when fetching more messages */}
+                    {messagesLoading && messages.length > 0 && (
+                      <div style={{ textAlign: "center", padding: "10px 0" }}>
+                        <Spin size="small" />
+                      </div>
+                    )}
+
+                    {/* Message content area */}
+                    <div style={{ flex: 1 }}>
+                      {messages.length > 0 ? (
+                        <>
+                          {/* Network indicator */}
+                          <div style={{
+                            position: "absolute",
+                            top: 0,
+                            right: 16,
+                            padding: "4px 8px",
+                            borderRadius: "0 0 4px 4px",
+                            backgroundColor: navigator.onLine ? "#4CAF50" : "#F44336",
+                            color: "white",
+                            fontSize: 12,
+                            opacity: 0.8,
+                            zIndex: 1
+                          }}>
+                            {navigator.onLine ? "Online" : "Offline"}
+                          </div>
+                          
+                          {/* Message list */}
+                          {messages.map((msg: MessageResponseModel) => (
+                            <MessageItem 
+                              key={msg.id || `temp-${msg.created_at}`} 
+                              message={msg} 
+                              onDelete={deleteMessage}
+                            />
+                          ))}
+                        </>
+                      ) : initialMessagesLoaded ? (
+                        <Empty
+                          description={localStrings.Messages.NoMessages || "No messages yet"}
+                          image={Empty.PRESENTED_IMAGE_SIMPLE}
+                          style={{ marginTop: 40 }}
+                        />
+                      ) : null}
+                    </div>
+                  </div>
+                )}
+              </div>
             ) : (
               <div style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center" }}>
                 <Text type="secondary">{localStrings.Messages.SelectConversationToChat || "Select a conversation to start chatting"}</Text>
