@@ -8,6 +8,12 @@ import { defaultMessagesRepo } from "@/api/features/messages/MessagesRepo";
 import { ConversationResponseModel, UpdateConversationRequestModel } from "@/api/features/messages/models/ConversationModel";
 import { MessageResponseModel } from "@/api/features/messages/models/MessageModel";
 
+interface ExtendedMessageResponseModel extends MessageResponseModel {
+  isDateSeparator?: boolean;
+}
+
+type MessageWithDate = ExtendedMessageResponseModel;
+
 export const useMessagesViewModel = () => {
   const { user, localStrings } = useAuth();
   const {
@@ -109,6 +115,69 @@ export const useMessagesViewModel = () => {
     }
   }, [initialMessagesLoaded, messages]);
 
+  const formatDateForDisplay = (date: Date): string => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    const messageDay = new Date(date);
+    messageDay.setHours(0, 0, 0, 0);
+    
+    // Kiểm tra nếu là hôm nay, hôm qua, hoặc ngày khác
+    if (messageDay.getTime() === today.getTime()) {
+      return "Hôm nay";
+    } else if (messageDay.getTime() === yesterday.getTime()) {
+      return "Hôm qua";
+    } else {
+      // Định dạng: Thứ 2, 15 tháng 4, 2023
+      const options: Intl.DateTimeFormatOptions = { 
+        weekday: 'long', 
+        day: 'numeric', 
+        month: 'long', 
+        year: 'numeric' 
+      };
+      return date.toLocaleDateString('vi-VN', options);
+    }
+  };
+  
+  // Hàm để xử lý tin nhắn và thêm phân cách ngày
+  const processMessagesWithDateSeparators = (messages: MessageResponseModel[]): MessageWithDate[] => {
+    if (!messages || messages.length === 0) return [];
+  
+    const processedMessages: MessageWithDate[] = [];
+    let currentDate: string | null = null;
+  
+    // Duyệt qua từng tin nhắn để thêm ngày phân cách
+    messages.forEach((message) => {
+      if (message.created_at) {
+        const messageDate = new Date(message.created_at);
+        const messageDateStr = messageDate.toISOString().split('T')[0]; // YYYY-MM-DD
+  
+        // Nếu đây là ngày mới, thêm tin nhắn phân cách
+        if (messageDateStr !== currentDate) {
+          currentDate = messageDateStr;
+          
+          // Tạo tin nhắn phân cách ngày
+          const dateSeparator: MessageWithDate = {
+            id: `date-separator-${messageDateStr}`,
+            content: formatDateForDisplay(messageDate),
+            isDateSeparator: true,
+            created_at: message.created_at,
+          };
+          
+          processedMessages.push(dateSeparator);
+        }
+      }
+      
+      // Thêm tin nhắn gốc
+      processedMessages.push(message as MessageWithDate);
+    });
+  
+    return processedMessages;
+  };
+
   // Function to fetch conversations
   const fetchConversations = async () => {
     if (!user?.id) return;
@@ -150,13 +219,13 @@ export const useMessagesViewModel = () => {
     }
     
     try {
-      // Yêu cầu tin nhắn được sắp xếp mới nhất trước (giảm dần theo created_at)
+      // Sử dụng các thuộc tính có trong model - đã cập nhật với tham số chính xác
       const response = await defaultMessagesRepo.getMessagesByConversationId({
         conversation_id: conversationId,
-        limit: pageSize,
-        page: page,
         sort_by: "created_at",
-        isDescending: true // Đảm bảo lấy tin nhắn mới nhất trước
+        is_descending: true, // Đảm bảo lấy tin nhắn mới nhất trước
+        limit: pageSize,
+        page: page
       });
       
       if (response.data) {
@@ -173,12 +242,19 @@ export const useMessagesViewModel = () => {
           isTemporary: false
         }));
         
+        // Sắp xếp tin nhắn mới nhất ở dưới cùng (tăng dần theo created_at)
+        // Điều này giả định rằng tin nhắn có created_at
+        const sortedApiMessages = [...formattedMessages].sort((a, b) => {
+          const dateA = new Date(a.created_at || "");
+          const dateB = new Date(b.created_at || "");
+          return dateA.getTime() - dateB.getTime();
+        });
+        
         // Get existing messages
         let existingMessages = shouldAppend ? [...messages] : [];
         
         if (shouldAppend) {
-          // When loading older messages (tải thêm tin nhắn cũ hơn)
-          
+          // When loading older messages
           // First, create a map of existing messages by ID for quick lookup
           const existingMessageMap = new Map();
           existingMessages.forEach(msg => {
@@ -188,25 +264,39 @@ export const useMessagesViewModel = () => {
           });
           
           // Filter out duplicates
-          const uniqueNewMessages = formattedMessages.filter(msg => 
+          const uniqueNewMessages = sortedApiMessages.filter(msg => 
             !msg.id || !existingMessageMap.has(msg.id)
           );
           
-          // Khi tải thêm tin nhắn cũ, thêm vào danh sách hiện có
-          // Vì API trả về tin nhắn mới nhất trước, nên thêm tin nhắn hiện có vào sau các tin nhắn mới
-          const updatedMessages = [...existingMessages, ...uniqueNewMessages];
+          // Kiểm tra vị trí thêm tin nhắn mới
+          // Nếu trang đầu tiên có tin nhắn cũ nhất, thêm vào đầu danh sách
+          // Nếu tải thêm tin nhắn cũ, thêm vào đầu danh sách
+          const firstApiMsgTime = new Date(sortedApiMessages[0]?.created_at || Date.now()).getTime();
+          const firstExistingMsgTime = new Date(existingMessages[0]?.created_at || Date.now()).getTime();
           
-          // Sắp xếp lại tin nhắn theo thời gian tăng dần (cũ -> mới) để hiển thị đúng
+          // Nếu tin nhắn mới có thời gian tạo nhỏ hơn (cũ hơn) tin nhắn đầu tiên hiện tại
+          // thì thêm vào đầu danh sách
+          let updatedMessages = [];
+          if (firstApiMsgTime < firstExistingMsgTime) {
+            updatedMessages = [...uniqueNewMessages, ...existingMessages];
+          } else {
+            // Ngược lại, thêm vào cuối danh sách (trường hợp hiếm)
+            updatedMessages = [...existingMessages, ...uniqueNewMessages];
+          }
+          
+          // Sắp xếp lại toàn bộ theo thứ tự thời gian để đảm bảo
           const sortedMessages = updatedMessages.sort((a, b) => {
             const dateA = new Date(a.created_at || "");
             const dateB = new Date(b.created_at || "");
             return dateA.getTime() - dateB.getTime();
           });
           
-          // Update messages state
-          setMessages(sortedMessages);
-          
-          // Update in WebSocket context too
+          const messagesWithDateSeparators = processMessagesWithDateSeparators(sortedMessages);
+
+          // Update messages state với tin nhắn đã có phân cách ngày
+          setMessages(messagesWithDateSeparators);
+
+          // Chỉ cập nhật WebSocket với tin nhắn gốc (không có phân cách ngày)
           updateMessagesForConversation(conversationId, sortedMessages);
           
           // Restore scroll position when loading older messages
@@ -217,21 +307,17 @@ export const useMessagesViewModel = () => {
             }
           }, 50);
         } else {
-          // Initial load - replace messages completely
-          // Sắp xếp lại tin nhắn theo thời gian tăng dần (cũ -> mới) để hiển thị đúng
-          const sortedMessages = formattedMessages.sort((a, b) => {
-            const dateA = new Date(a.created_at || "");
-            const dateB = new Date(b.created_at || "");
-            return dateA.getTime() - dateB.getTime();
-          });
-          
-          setMessages(sortedMessages);
+          // Initial load - replace messages completely with sorted messages
+          setMessages(sortedApiMessages);
           
           // Update in WebSocket context
-          updateMessagesForConversation(conversationId, sortedMessages);
+          updateMessagesForConversation(conversationId, sortedApiMessages);
           
           // Mark that we've loaded initial messages
           setInitialMessagesLoaded(true);
+          
+          // Scroll to bottom after loading initial messages
+          setTimeout(scrollToBottom, 100);
         }
       }
     } catch (error) {

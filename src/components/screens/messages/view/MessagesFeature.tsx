@@ -10,6 +10,7 @@ import { ConversationResponseModel } from "@/api/features/messages/models/Conver
 import { MessageResponseModel } from "@/api/features/messages/models/MessageModel";
 import NewConversationModal from "./NewConversationModal";
 import MessageItem from "./MessageItem";
+import DateSeparator from "./DateSeparator";
 
 const { Header, Content, Sider } = Layout;
 const { Search } = Input;
@@ -367,11 +368,19 @@ const MessagesFeature: React.FC = () => {
                           
                           {/* Message list */}
                           {messages.map((msg: MessageResponseModel) => (
-                            <MessageItem 
-                              key={msg.id || `temp-${msg.created_at}`} 
-                              message={msg} 
-                              onDelete={deleteMessage}
-                            />
+                            // @ts-ignore - isDateSeparator không có trong MessageResponseModel gốc
+                            msg.isDateSeparator ? (
+                              <DateSeparator 
+                                key={msg.id} 
+                                date={msg.content || ""}
+                              />
+                            ) : (
+                              <MessageItem 
+                                key={msg.id || `temp-${msg.created_at}`} 
+                                message={msg} 
+                                onDelete={deleteMessage}
+                              />
+                            )
                           ))}
                         </>
                       ) : initialMessagesLoaded ? (
