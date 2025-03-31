@@ -80,23 +80,11 @@ export const useMessagesViewModel = () => {
       // Reset cờ tải ban đầu khi chuyển cuộc trò chuyện
       initialLoadRef.current = false;
       
-      // Lấy tin nhắn từ WebSocket context cho cuộc trò chuyện này
-      const wsMessages = getMessagesForConversation(currentConversation.id);
-      if (wsMessages && wsMessages.length > 0) {
-        // Đảm bảo tin nhắn không bị trùng lặp
-        const uniqueMessages = Array.from(
-          new Map(wsMessages.map(msg => [msg.id, msg])).values()
-        ).sort((a, b) => {
-          const dateA = new Date(a.created_at || "");
-          const dateB = new Date(b.created_at || "");
-          return dateA.getTime() - dateB.getTime();
-        });
-        
-        setMessages(uniqueMessages);
-      } else {
-        // Nếu không có tin nhắn trong WebSocket context, fetch từ API
+      // Sử dụng timeout để đảm bảo state đã được cập nhật
+      setTimeout(() => {
+        // Luôn lấy tin nhắn từ API để đảm bảo dữ liệu mới nhất
         fetchLatestMessages(currentConversation.id);
-      }
+      }, 50);
     }
   }, [currentConversation?.id]);
   
@@ -170,7 +158,7 @@ export const useMessagesViewModel = () => {
         // Kiểm tra xem đã đến cuối tin nhắn chưa
         setIsMessagesEnd(messageList.length < pageSize);
         
-        // Cập nhật messages trong WebSocket context trước
+        // Cập nhật messages trong WebSocket context
         updateMessagesForConversation(conversationId, sortedMessages);
         
         // Sau đó lấy lại từ context để cập nhật state
@@ -215,39 +203,33 @@ export const useMessagesViewModel = () => {
         // Check if we've reached the end of messages
         setIsMessagesEnd(messageList.length < pageSize);
         
-        // Update state based on whether we're appending or replacing
-        if (append) {
-          setMessages(prev => {
-            // Merge and deduplicate messages
-            const combined = [...sortedMessages, ...prev];
-            const uniqueMessages = Array.from(
-              new Map(combined.map(item => [item.id, item])).values()
-            );
-            return uniqueMessages.sort((a, b) => {
-              const dateA = new Date(a.created_at || "");
-              const dateB = new Date(b.created_at || "");
-              return dateA.getTime() - dateB.getTime();
-            });
-          });
-        } else {
-          setMessages(sortedMessages);
-        }
+        // Get existing messages from context 
+        const existingMessages = getMessagesForConversation(conversationId);
         
-        // Update messages in WebSocket context
         if (append) {
-          const existingMessages = getMessagesForConversation(conversationId);
-          const combinedMessages = [...sortedMessages, ...existingMessages];
-          const uniqueCombined = Array.from(
-            new Map(combinedMessages.map(item => [item.id, item])).values()
-          ).sort((a, b) => {
-            const dateA = new Date(a.created_at || "");
-            const dateB = new Date(b.created_at || "");
-            return dateA.getTime() - dateB.getTime();
+          // When loading more messages, merge with existing ones
+          // First, create a map of existing messages by ID for quick lookup
+          const existingMessageMap = new Map();
+          existingMessages.forEach(msg => {
+            if (msg.id) {
+              existingMessageMap.set(msg.id, true);
+            }
           });
-          updateMessagesForConversation(conversationId, uniqueCombined);
+          
+          // Only add messages that don't already exist
+          const newMessages = sortedMessages.filter(msg => !msg.id || !existingMessageMap.has(msg.id));
+          
+          // Update WebSocket context with merged messages
+          const combinedMessages = [...newMessages, ...existingMessages];
+          updateMessagesForConversation(conversationId, combinedMessages);
         } else {
+          // When fetching initial messages, replace existing ones
           updateMessagesForConversation(conversationId, sortedMessages);
         }
+        
+        // Get updated messages from context and update state
+        const updatedMessages = getMessagesForConversation(conversationId);
+        setMessages(updatedMessages);
       }
     } catch (error) {
       console.error("Error fetching messages:", error);

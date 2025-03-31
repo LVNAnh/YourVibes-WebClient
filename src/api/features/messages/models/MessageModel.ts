@@ -44,4 +44,7 @@ export interface MessageResponseModel {
     text?: string,                
     isTemporary?: boolean,        
     reply_to?: MessageResponseModel 
+
+    fromServer?: boolean,
+    sendFailed?: boolean
 }

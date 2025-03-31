@@ -204,38 +204,18 @@ export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
     setLastMessages(prev => {
       const conversationMessages = prev[conversationId] || [];
       
-      // Debug để xem các tin nhắn hiện tại trong cuộc trò chuyện
-      console.log(`Current messages in conversation ${conversationId}:`, 
-        conversationMessages.map(msg => ({ 
-          id: msg.id, 
-          content: msg.content,
-          user_id: msg.user_id,
-          time: msg.created_at
-        }))
-      );
-      
-      // Debug message being checked
-      console.log("New message to check:", {
-        id: message.id,
-        content: message.content,
-        user_id: message.user_id,
-        time: message.created_at
-      });
-      
-      // Cải thiện logic kiểm tra trùng lặp - chỉ kiểm tra ID nếu có
-      const messageExists = message.id 
+      // Cải thiện kiểm tra trùng lặp - ưu tiên kiểm tra ID nếu có
+      const isDuplicate = message.id 
         ? conversationMessages.some(msg => msg.id === message.id)
         : conversationMessages.some(
-            msg => msg.content === message.content && 
-                  msg.user_id === message.user_id &&
-                  // Chỉ kiểm tra tin nhắn được tạo trong vòng 2 giây
-                  Math.abs(new Date(msg.created_at || "").getTime() - 
-                          new Date(message.created_at || "").getTime()) < 2000
+            msg => 
+              msg.content === message.content && 
+              msg.user_id === message.user_id &&
+              Math.abs(new Date(msg.created_at || "").getTime() - 
+                      new Date(message.created_at || "").getTime()) < 2000
           );
       
-      console.log(`Message duplicate check result: ${messageExists}`);
-      
-      if (messageExists) {
+      if (isDuplicate) {
         console.log("Message already exists, not adding duplicate");
         return prev;
       }
@@ -250,10 +230,6 @@ export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
       // Add new message and sort
       const updatedMessages = [...conversationMessages, formattedMessage].sort(
         (a, b) => new Date(a.created_at || "").getTime() - new Date(b.created_at || "").getTime()
-      );
-      
-      console.log("Updated messages for conversation:", 
-        updatedMessages.map(msg => ({ id: msg.id, content: msg.content, user_id: msg.user_id }))
       );
       
       // Notify listeners about new message
@@ -332,7 +308,7 @@ export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
 
   // Update messages for a specific conversation
   const updateMessagesForConversation = (conversationId: string, messages: MessageResponseModel[]) => {
-    if (!conversationId || !messages) return;
+    if (!conversationId || !messages || messages.length === 0) return;
     
     // Format incoming messages to ensure consistent structure
     const formattedMessages = messages.map(msg => ({
@@ -345,16 +321,48 @@ export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
       // Get existing messages
       const existingMessages = prev[conversationId] || [];
       
-      // Merge existing and new messages
-      const allMessages = [...existingMessages, ...formattedMessages];
+      // Tạo Map với key là ID tin nhắn để loại bỏ trùng lặp hiệu quả
+      const messageMap = new Map();
       
-      // Remove duplicates based on ID uniqueness
-      const uniqueMessages = Array.from(
-        new Map(allMessages.map(item => [item.id, item])).values()
-      );
+      // Thêm tin nhắn hiện có vào Map
+      existingMessages.forEach(msg => {
+        if (msg.id) {
+          messageMap.set(msg.id, msg);
+        }
+      });
       
-      // Sort by timestamp
-      const sortedMessages = uniqueMessages.sort(
+      // Thêm tin nhắn mới, ghi đè nếu đã tồn tại
+      formattedMessages.forEach(msg => {
+        if (msg.id) {
+          messageMap.set(msg.id, msg);
+        } else {
+          // Nếu không có ID, thêm tin nhắn mới (hiếm khi xảy ra)
+          existingMessages.push(msg);
+        }
+      });
+      
+      // Chuyển đổi Map thành mảng và sắp xếp
+      const uniqueMessages = Array.from(messageMap.values());
+      
+      // Kết hợp với các tin nhắn không có ID (nếu có)
+      const allMessages = [...uniqueMessages, ...existingMessages.filter(msg => !msg.id)];
+      
+      // Loại bỏ trùng lặp dựa trên nội dung và thời gian (cho tin nhắn không có ID)
+      const finalMessages = allMessages.filter((msg, index, self) => {
+        if (!msg.id) {
+          // Nếu không có ID, kiểm tra nội dung và thời gian
+          return index === self.findIndex(m => 
+            m.content === msg.content && 
+            m.user_id === msg.user_id &&
+            Math.abs(new Date(m.created_at || "").getTime() - 
+                    new Date(msg.created_at || "").getTime()) < 2000
+          );
+        }
+        return true; // Giữ tất cả tin nhắn có ID (đã được xử lý trùng lặp bởi Map)
+      });
+      
+      // Sắp xếp theo thời gian tạo
+      const sortedMessages = finalMessages.sort(
         (a, b) => new Date(a.created_at || "").getTime() - new Date(b.created_at || "").getTime()
       );
       
