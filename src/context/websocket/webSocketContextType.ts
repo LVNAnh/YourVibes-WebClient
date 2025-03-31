@@ -5,7 +5,7 @@ export interface WebSocketContextType {
   isConnected: boolean;
   lastMessages: Record<string, MessageResponseModel[]>;
   unreadMessages: Record<string, number>;
-  sendMessage: (message: any) => void;
+  sendMessage: (message: any) => boolean;
   currentConversationId: string | null;
   setCurrentConversationId: (id: string | null) => void;
   markMessagesAsRead: (conversationId: string) => void;
@@ -16,4 +16,5 @@ export interface WebSocketContextType {
   updateConversations: (conversations: ConversationResponseModel[]) => void;
   getConversations: () => ConversationResponseModel[];
   conversations: ConversationResponseModel[];
+  addMessageListener: (callback: (conversationId: string, messages: MessageResponseModel[]) => void) => () => void;
 }

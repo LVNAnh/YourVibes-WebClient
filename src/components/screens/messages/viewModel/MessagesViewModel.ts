@@ -1,586 +1,410 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { message } from "antd";
+
 import { useAuth } from "@/context/auth/useAuth";
-import { defaultMessagesRepo } from "@/api/features/messages/MessagesRepo";
-import { ConversationResponseModel } from "@/api/features/messages/models/ConversationModel";
-import { MessageResponseModel } from "@/api/features/messages/models/MessageModel";
 import { useWebSocket } from "@/context/websocket/useWebSocket";
 
-/**
- * Custom hook for managing messages feature logic
- * Optimized to avoid repeated requests and using refs for stable functions
- */
+import { defaultMessagesRepo } from "@/api/features/messages/MessagesRepo";
+import { ConversationResponseModel, UpdateConversationRequestModel } from "@/api/features/messages/models/ConversationModel";
+import { MessageResponseModel } from "@/api/features/messages/models/MessageModel";
+
 export const useMessagesViewModel = () => {
   const { user, localStrings } = useAuth();
   const {
-    isConnected,
-    lastMessages,
-    updateMessagesForConversation,
+    isConnected: isWebSocketConnected,
+    sendMessage: wsSendMessage,
+    currentConversationId,
+    setCurrentConversationId,
     getMessagesForConversation,
-    updateConversations,
-    getConversations,
+    updateMessagesForConversation,
     conversations: wsConversations,
-    currentConversationId: wsCurrentConversationId,
-    setCurrentConversationId: setWsCurrentConversationId,
-    resetUnreadCount,
-    addNewMessage
+    updateConversations,
+    addMessageListener
   } = useWebSocket();
-  
-  // State for conversations
-  const [conversations, setConversations] = useState<ConversationResponseModel[]>([]);
-  const [conversationsLoading, setConversationsLoading] = useState(false);
-  const [conversationPage, setConversationPage] = useState(1);
-  const [isConversationsEnd, setIsConversationsEnd] = useState(false);
-  
-  // State for messages
-  const [messages, setMessages] = useState<MessageResponseModel[]>([]);
-  const [messagesLoading, setMessagesLoading] = useState(false);
-  const [messagePage, setMessagePage] = useState(1);
-  const [isMessagesEnd, setIsMessagesEnd] = useState(false);
-  
+
   // State for UI
+  const [conversations, setConversations] = useState<ConversationResponseModel[]>([]);
   const [currentConversation, setCurrentConversation] = useState<ConversationResponseModel | null>(null);
-  const [searchText, setSearchText] = useState("");
-  const [messageText, setMessageText] = useState("");
-  
-  // Variables to track loading state to avoid multiple calls
-  const conversationsLoadedRef = useRef(false);
-  const isApiCallingRef = useRef(false);
-  const messageListRef = useRef<HTMLDivElement | null>(null);
-  const firstLoadRef = useRef(true);
-  const autoScrollRef = useRef(true);
-  const fetchingMoreRef = useRef(false);
-  
-  // Initialize messages from WebSocket context when available
-  useEffect(() => {
-    if (wsConversations.length > 0) {
-      setConversations(wsConversations);
-    }
-  }, [wsConversations]);
-  
-  // Sync current conversation between WebSocket context and local state
-  useEffect(() => {
-    if (currentConversation?.id) {
-      setWsCurrentConversationId(currentConversation.id);
-      resetUnreadCount(currentConversation.id);
-    } else {
-      setWsCurrentConversationId(null);
-    }
-  }, [currentConversation?.id, setWsCurrentConversationId, resetUnreadCount]);
-  
-  // Sync messages with WebSocket context
-  useEffect(() => {
-    if (currentConversation?.id) {
-      const contextMessages = getMessagesForConversation(currentConversation.id);
-      if (contextMessages.length > 0) {
-        setMessages(contextMessages);
-      }
-    }
-  }, [currentConversation?.id, getMessagesForConversation]);
+  const [messages, setMessages] = useState<MessageResponseModel[]>([]);
+  const [messagesLoading, setMessagesLoading] = useState<boolean>(false);
+  const [conversationsLoading, setConversationsLoading] = useState<boolean>(false);
+  const [searchText, setSearchText] = useState<string>("");
+  const [messageText, setMessageText] = useState<string>("");
+  const [isMessagesEnd, setIsMessagesEnd] = useState<boolean>(false);
 
-  // Use stable ref for API functions
-  const stableActions = useRef({
-    fetchConversations: async (page = 1, limit = 20) => {
-      // Skip if already loading, or data already loaded and on first page
-      if (!user?.id || isApiCallingRef.current || 
-          (page === 1 && conversationsLoadedRef.current)) return;
-      
-      isApiCallingRef.current = true;
-      setConversationsLoading(true);
-      
-      try {
-        // Get conversation details for the user
-        const conversationDetailsResponse = await defaultMessagesRepo.getConversationDetailByUserID({
-          user_id: user.id,
-          limit: 100, // Get more to avoid refetching
-          page: 1
-        });
-        
-        if (conversationDetailsResponse.data && Array.isArray(conversationDetailsResponse.data)) {
-          // Extract conversations from conversation details
-          const conversationDetails = conversationDetailsResponse.data as any[];
-          
-          // Filter valid conversations with complete information
-          const validConversations = conversationDetails
-            .filter(detail => detail.conversation && detail.conversation.id)
-            .map(detail => ({
-              id: detail.conversation.id,
-              name: detail.conversation.name,
-              image: detail.conversation.image,
-              created_at: detail.conversation.created_at,
-              updated_at: detail.conversation.updated_at
-            }));
-          
-          // Remove duplicates
-          const uniqueConversations = Array.from(
-            new Map(validConversations.map(item => [item.id, item])).values()
-          ) as ConversationResponseModel[];
-          
-          // Sort by most recent activity
-          const sortedConversations = [...uniqueConversations].sort((a, b) => {
-            const dateA = new Date(a.updated_at || a.created_at || "").getTime();
-            const dateB = new Date(b.updated_at || b.created_at || "").getTime();
-            return dateB - dateA; // Most recent first
-          });
-          
-          if (page === 1) {
-            setConversations(sortedConversations);
-            // Mark as loaded to avoid reloading
-            conversationsLoadedRef.current = true;
-            // Update WebSocket context
-            updateConversations(sortedConversations);
-          } else {
-            setConversations(prev => [...prev, ...sortedConversations]);
-          }
-          
-          // All conversations fetched at once 
-          setIsConversationsEnd(true);
-          setConversationPage(page);
-        } else {
-          // No conversations found
-          setConversations([]);
-          setIsConversationsEnd(true);
-          conversationsLoadedRef.current = true;
-        }
-      } catch (error) {
-        console.error("Error fetching conversations:", error);
-        message.error(localStrings.Messages.ErrorFetchingConversations || "Error fetching conversations");
-      } finally {
-        setConversationsLoading(false);
-        // Allow API calls again after a delay
-        setTimeout(() => {
-          isApiCallingRef.current = false;
-        }, 2000);
-      }
-    },
-    
-    fetchMessages: async (conversationId: string, page = 1, limit = 20, forceRefresh = false) => {
-      if (!conversationId || (messagesLoading && !forceRefresh)) return;
-      
-      // Reset pagination when changing conversations
-      if (page === 1) {
-        if (!forceRefresh && getMessagesForConversation(conversationId).length > 0) {
-          // Use cached messages from WebSocket context first
-          setMessages(getMessagesForConversation(conversationId));
-          // Still fetch in background to ensure up-to-date data
-          fetchingMoreRef.current = true;
-        } else {
-          setMessages([]);
-        }
-      }
-      
-      setMessagesLoading(true);
-      
-      try {
-        // Fetch messages from API
-        const response = await defaultMessagesRepo.getMessagesByConversationId({
-          conversation_id: conversationId,
-          page,
-          limit: 50 // Increased limit to fetch more messages at once
-        });
-        
-        if (response.data) {
-          let fetchedMessages = Array.isArray(response.data) 
-            ? response.data as MessageResponseModel[]
-            : [response.data] as MessageResponseModel[];
-          
-          // Sort messages by created_at
-          fetchedMessages = fetchedMessages.sort((a, b) => {
-            return new Date(a.created_at || "").getTime() - new Date(b.created_at || "").getTime();
-          });
-          
-          // Add fromServer flag to identify messages
-          const markedMessages = fetchedMessages.map(msg => ({
-            ...msg,
-            fromServer: true
-          }));
-          
-          if (page === 1) {
-            setMessages(markedMessages);
-            // Update WebSocket context
-            updateMessagesForConversation(conversationId, markedMessages);
-            
-            // Auto-scroll to bottom on initial load
-            setTimeout(() => {
-              if (messageListRef.current && autoScrollRef.current) {
-                messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
-              }
-            }, 200);
-          } else {
-            // Merge with existing messages, avoiding duplicates
-            setMessages(prev => {
-              // Get existing message IDs
-              const existingIds = new Set(prev.map(msg => msg.id));
-              
-              // Filter new messages
-              const newMessages = fetchedMessages.filter(msg => !existingIds.has(msg.id))
-                .map(msg => ({
-                  ...msg,
-                  fromServer: true
-                }));
-              
-              // Combine new and existing messages
-              const mergedMessages = [...newMessages, ...prev];
-              
-              // Sort by time
-              return mergedMessages.sort((a, b) => {
-                return new Date(a.created_at || "").getTime() - new Date(b.created_at || "").getTime();
-              });
-            });
-            
-            // Also update in WebSocket context
-            if (newMessages && newMessages.length > 0) {
-              const updatedContextMessages = [...getMessagesForConversation(conversationId), ...newMessages];
-              updateMessagesForConversation(conversationId, updatedContextMessages);
-            }
-          }
-          
-          // Check if we've reached the end of messages
-          setIsMessagesEnd(fetchedMessages.length < limit);
-          setMessagePage(page);
-        } else {
-          // No messages found
-          if (page === 1) {
-            setMessages([]);
-            updateMessagesForConversation(conversationId, []);
-          }
-          setIsMessagesEnd(true);
-        }
-      } catch (error) {
-        console.error("Error fetching messages:", error);
-        message.error(localStrings.Public.ErrorFetchingMessages || "Error fetching messages");
-      } finally {
-        setMessagesLoading(false);
-        fetchingMoreRef.current = false;
-      }
-    },
-    
-    sendMessage: async (content: string, conversationId: string) => {
-      if (!conversationId || !content.trim() || !user) return;
-      
-      // Generate temporary ID for optimistic update
-      const tempId = `temp_${Date.now()}`;
-      
-      // Create temporary message for immediate display
-      const tempMessage: MessageResponseModel = {
-        id: tempId,
-        user_id: user.id,
-        user: {
-          id: user.id,
-          family_name: user.family_name,
-          name: user.name,
-          avatar_url: user.avatar_url
-        },
-        conversation_id: conversationId,
-        content,
-        created_at: new Date().toISOString(),
-        isTemporary: true
-      };
-      
-      // Add temporary message to UI
-      setMessages(prev => [...prev, tempMessage]);
-      addNewMessage(conversationId, tempMessage);
-      
-      // Enable auto-scroll when sending a message
-      autoScrollRef.current = true;
-      
-      // Scroll to bottom to show the sent message
-      setTimeout(() => {
-        if (messageListRef.current) {
-          messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
-        }
-      }, 50);
-      
-      try {
-        // Send message to server
-        const response = await defaultMessagesRepo.createMessage({
-          content,
-          conversation_id: conversationId,
-          user: {
-            id: user.id,
-            family_name: user.family_name,
-            name: user.name,
-            avatar_url: user.avatar_url
-          }
-        });
-        
-        if (response.data) {
-          // Create reference to real message from API
-          const realMessage = response.data as MessageResponseModel;
-          
-          // Add fromServer attribute
-          const serverMessage = {
-            ...realMessage,
-            fromServer: true,
-            isTemporary: false
-          };
-          
-          // Replace temporary message with real one
-          setMessages(prev => 
-            prev.map(msg => 
-              msg.id === tempId ? serverMessage : msg
-            )
-          );
-          
-          // Update in WebSocket context too
-          updateMessagesForConversation(
-            conversationId,
-            getMessagesForConversation(conversationId).map(msg => 
-              msg.id === tempId ? serverMessage : msg
-            )
-          );
-          
-          console.log("Message sent successfully:", serverMessage);
-          
-          // Update conversation order
-          setConversations(prev => {
-            const conversationIndex = prev.findIndex(c => c.id === conversationId);
-            if (conversationIndex < 0) return prev;
-            
-            const updatedConversations = [...prev];
-            const conversation = { ...updatedConversations[conversationIndex] };
-            
-            // Update timestamp
-            conversation.updated_at = new Date().toISOString();
-            
-            // Remove from old position
-            updatedConversations.splice(conversationIndex, 1);
-            
-            // Add to top
-            updatedConversations.unshift(conversation);
-            
-            return updatedConversations;
-          });
-        }
-      } catch (error) {
-        console.error("Error sending message:", error);
-        message.error(localStrings.Public.ErrorSendingMessage || "Error sending message");
-        
-        // Remove temporary message on error
-        setMessages(prev => prev.filter(msg => msg.id !== tempId));
-        
-        // Try to resend after 2 seconds if online
-        setTimeout(() => {
-          if (navigator.onLine) {
-            console.log("Retrying to send message...");
-            stableActions.current.sendMessage(content, conversationId);
-          }
-        }, 2000);
-      }
-    },
-    
-    createConversation: async (name: string, image?: string) => {
-      if (!user?.id) {
-        message.error(localStrings.Public.LoginRequired || "You need to be logged in");
-        return;
-      }
-      
-      try {
-        const response = await defaultMessagesRepo.createConversation({
-          name,
-          image
-        });
-        
-        if (response.data) {
-          const newConversation = response.data as ConversationResponseModel;
-          
-          // Add current user to conversation
-          try {
-            await defaultMessagesRepo.createConversationDetail({
-              conversation_id: newConversation.id,
-              user_id: user.id
-            });
-            
-            // Add to conversation list
-            setConversations(prev => [newConversation, ...prev]);
-            updateConversations([newConversation, ...getConversations()]);
-            
-            // Set as current conversation
-            setCurrentConversation(newConversation);
-            
-            return newConversation;
-          } catch (error) {
-            console.error("Error adding current user to conversation:", error);
-            message.error(localStrings.Public.ErrorCreatingConversation || "Error creating conversation");
-          }
-        }
-      } catch (error) {
-        console.error("Error creating conversation:", error);
-        message.error(localStrings.Public.ErrorCreatingConversation || "Error creating conversation");
-      }
-    },
-    
-    deleteMessage: async (messageId: string) => {
-      try {
-        await defaultMessagesRepo.deleteMessage({
-          message_id: messageId
-        });
-        
-        // Remove from UI and context
-        setMessages(prev => prev.filter(msg => msg.id !== messageId));
-        
-        // Also update in WebSocket context
-        if (currentConversation?.id) {
-          updateMessagesForConversation(
-            currentConversation.id,
-            getMessagesForConversation(currentConversation.id).filter(msg => msg.id !== messageId)
-          );
-        }
-        
-        message.success(localStrings.Public.MessageDeleted || "Message deleted");
-      } catch (error) {
-        console.error("Error deleting message:", error);
-        message.error(localStrings.Public.ErrorDeletingMessage || "Error deleting message");
-      }
-    },
-    
-    deleteConversation: async (conversationId: string) => {
-      try {
-        await defaultMessagesRepo.deleteConversation({
-          conversation_id: conversationId
-        });
-        
-        // Remove from list
-        setConversations(prev => prev.filter(conv => conv.id !== conversationId));
-        updateConversations(getConversations().filter(conv => conv.id !== conversationId));
-        
-        // Clear if current conversation
-        if (currentConversation?.id === conversationId) {
-          setCurrentConversation(null);
-          setMessages([]);
-        }
-        
-        message.success(localStrings.Public.ConversationDeleted || "Conversation deleted");
-      } catch (error) {
-        console.error("Error deleting conversation:", error);
-        message.error(localStrings.Public.ErrorDeletingConversation || "Error deleting conversation");
-      }
-    }
-  });
+  // Pagination for messages
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const pageSize = 20;
+  
+  // Ref for message list for scrolling
+  const messageListRef = useRef<HTMLDivElement>(null);
+  const lastMessageRef = useRef<string | null>(null);
 
-  // Initial conversations load
+  // Initialize by loading conversations
   useEffect(() => {
     if (user?.id) {
-      // Use requestIdleCallback for optimization
-      if (typeof requestIdleCallback === 'function') {
-        requestIdleCallback(() => {
-          stableActions.current.fetchConversations();
-        });
-      } else {
-        // Fallback for browsers without requestIdleCallback
-        const timer = setTimeout(() => {
-          stableActions.current.fetchConversations();
-        }, 300);
-        
-        return () => clearTimeout(timer);
-      }
+      fetchConversations();
     }
   }, [user?.id]);
 
-  // Auto-refresh mechanism for messages
+  // Update local conversations when WebSocket conversations change
   useEffect(() => {
-    if (!currentConversation?.id) return;
-    
-    // Initial fetch when conversation changes
-    if (firstLoadRef.current && currentConversation?.id) {
-      stableActions.current.fetchMessages(currentConversation.id, 1, 50);
-      firstLoadRef.current = false;
+    if (wsConversations && wsConversations.length > 0) {
+      setConversations(wsConversations);
     }
-    
-    // Set up auto-refresh
-    const refreshInterval = setInterval(() => {
-      if (currentConversation?.id && document.visibilityState === 'visible' && !fetchingMoreRef.current) {
-        console.log("Auto-refreshing messages for conversation:", currentConversation.id);
-        stableActions.current.fetchMessages(currentConversation.id, 1, 50, true);
+  }, [wsConversations]);
+
+  // Set up message listener for real-time updates
+  useEffect(() => {
+    // Register a message listener to get real-time updates
+    const unsubscribe = addMessageListener((conversationId, updatedMessages) => {
+      // Only update UI if this is the current conversation
+      if (conversationId === currentConversation?.id) {
+        setMessages(updatedMessages);
       }
-    }, 30000); // Every 30 seconds
+    });
     
-    // Visibility change handler
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && currentConversation?.id) {
-        console.log("Tab became visible, refreshing messages");
-        stableActions.current.fetchMessages(currentConversation.id, 1, 50, true);
+    return unsubscribe;
+  }, [addMessageListener, currentConversation?.id]);
+
+  // Update messages from WebSocket when conversation changes
+  useEffect(() => {
+    if (currentConversation?.id) {
+      // Set current conversation ID in WebSocket context
+      setCurrentConversationId(currentConversation.id);
+      
+      // Get messages from WebSocket context for this conversation
+      const wsMessages = getMessagesForConversation(currentConversation.id);
+      if (wsMessages && wsMessages.length > 0) {
+        setMessages(wsMessages);
+      } else {
+        // If no messages in WebSocket context, fetch from API
+        fetchMessages(currentConversation.id);
       }
-    };
-    
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    
-    return () => {
-      clearInterval(refreshInterval);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
+    }
   }, [currentConversation?.id]);
 
-  // Handle scroll events to detect when user scrolls away from bottom
-  const handleScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
-    if (messageListRef.current) {
-      const { scrollTop, scrollHeight, clientHeight } = messageListRef.current;
-      
-      // If user is near bottom, enable auto-scroll for new messages
-      const isNearBottom = scrollTop + clientHeight >= scrollHeight - 80;
-      autoScrollRef.current = isNearBottom;
-    }
-  }, []);
-
-  // Set message list ref
-  const setMessageListElement = useCallback((element: HTMLDivElement | null) => {
-    messageListRef.current = element;
-    
-    // Auto-scroll to bottom on initial load
-    if (element && currentConversation?.id && messages.length > 0) {
-      setTimeout(() => {
-        if (messageListRef.current) {
-          messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
-        }
-      }, 200);
-    }
-  }, [currentConversation?.id, messages.length]);
-
-  // Create memoized functions to prevent unnecessary re-renders
-  const fetchConversations = useCallback((page = 1) => {
-    stableActions.current.fetchConversations(page);
-  }, []);
-  
-  const fetchMessages = useCallback((conversationId: string, page = 1) => {
-    stableActions.current.fetchMessages(conversationId, page);
-  }, []);
-  
-  const sendMessage = useCallback(() => {
-    if (currentConversation?.id && messageText.trim()) {
-      const messageToSend = messageText.trim();
-      stableActions.current.sendMessage(messageToSend, currentConversation.id);
-      setMessageText("");
-    }
-  }, [currentConversation?.id, messageText]);
-  
-  const createConversation = useCallback((name: string, image?: string) => {
-    return stableActions.current.createConversation(name, image);
-  }, []);
-  
-  const deleteMessage = useCallback((messageId: string) => {
-    stableActions.current.deleteMessage(messageId);
-  }, []);
-  
-  const deleteConversation = useCallback((conversationId: string) => {
-    stableActions.current.deleteConversation(conversationId);
-  }, []);
-  
-  // Load more (older) messages
-  const loadMoreMessages = useCallback(() => {
-    if (currentConversation?.id && !fetchingMoreRef.current) {
-      fetchingMoreRef.current = true;
-      stableActions.current.fetchMessages(currentConversation.id, messagePage + 1);
-    }
-  }, [currentConversation?.id, messagePage]);
-
-  // Reset loaded flag on unmount
+  // Scroll to bottom when new messages arrive
   useEffect(() => {
-    return () => {
-      conversationsLoadedRef.current = false;
-      isApiCallingRef.current = false;
-      firstLoadRef.current = true;
+    if (messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      
+      // Only scroll to bottom if it's a new message
+      if (lastMessageRef.current !== lastMessage.id) {
+        scrollToBottom();
+        lastMessageRef.current = lastMessage.id || null;
+      }
+    }
+  }, [messages]);
+
+  // Function to fetch conversations
+  const fetchConversations = async () => {
+    if (!user?.id) return;
+    
+    setConversationsLoading(true);
+    try {
+      const response = await defaultMessagesRepo.getConversations({
+        limit: 50,
+        page: 1
+      });
+      
+      if (response.data) {
+        // Update local state
+        const conversationsList = Array.isArray(response.data) 
+          ? response.data 
+          : [response.data];
+        setConversations(conversationsList);
+        
+        // Update WebSocket context
+        updateConversations(conversationsList);
+      }
+    } catch (error) {
+      console.error("Error fetching conversations:", error);
+      message.error(localStrings.Messages.ErrorFetchingConversations || "Error fetching conversations");
+    } finally {
+      setConversationsLoading(false);
+    }
+  };
+
+  // Function to fetch messages for a conversation
+  const fetchMessages = async (conversationId: string, page: number = 1, append: boolean = false) => {
+    if (!user?.id || !conversationId) return;
+    
+    setMessagesLoading(true);
+    try {
+      const response = await defaultMessagesRepo.getMessagesByConversationId({
+        conversation_id: conversationId,
+        limit: pageSize,
+        page: page
+      });
+      
+      if (response.data) {
+        // Convert to array if not already
+        const messageList = Array.isArray(response.data) ? response.data : [response.data];
+        
+        // Sort messages by created_at
+        const sortedMessages = messageList.sort((a, b) => {
+          const dateA = new Date(a.created_at || "");
+          const dateB = new Date(b.created_at || "");
+          return dateA.getTime() - dateB.getTime();
+        });
+        
+        // Check if we've reached the end of messages
+        setIsMessagesEnd(messageList.length < pageSize);
+        
+        // Update state based on whether we're appending or replacing
+        if (append) {
+          setMessages(prev => {
+            // Merge and deduplicate messages
+            const combined = [...prev, ...sortedMessages];
+            const uniqueMessages = Array.from(
+              new Map(combined.map(item => [item.id, item])).values()
+            );
+            return uniqueMessages.sort((a, b) => {
+              const dateA = new Date(a.created_at || "");
+              const dateB = new Date(b.created_at || "");
+              return dateA.getTime() - dateB.getTime();
+            });
+          });
+        } else {
+          setMessages(sortedMessages);
+        }
+        
+        // Update messages in WebSocket context
+        updateMessagesForConversation(conversationId, sortedMessages);
+      }
+    } catch (error) {
+      console.error("Error fetching messages:", error);
+    } finally {
+      setMessagesLoading(false);
+    }
+  };
+
+  // Function to load more messages (older messages)
+  const loadMoreMessages = async () => {
+    if (currentConversation?.id && !messagesLoading) {
+      const nextPage = currentPage + 1;
+      setCurrentPage(nextPage);
+      await fetchMessages(currentConversation.id, nextPage, true);
+    }
+  };
+
+  // Function to handle message list scrolling
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop } = e.currentTarget;
+    
+    // Load more messages when scrolled near the top
+    if (scrollTop < 100 && !messagesLoading && !isMessagesEnd && currentConversation?.id) {
+      loadMoreMessages();
+    }
+  };
+
+  // Function to create a new conversation
+  const createConversation = async (name: string, image?: string) => {
+    if (!user?.id) return null;
+    
+    try {
+      // Create the conversation
+      const createResponse = await defaultMessagesRepo.createConversation({
+        name: name,
+        image: image,
+        user_ids: [] // Users will be added through separate API calls
+      });
+      
+      if (createResponse.data) {
+        const newConversation = createResponse.data;
+        
+        // Add current user to the conversation detail
+        await defaultMessagesRepo.createConversationDetail({
+          conversation_id: newConversation.id,
+          user_id: user.id
+        });
+        
+        // Refresh conversations list
+        await fetchConversations();
+        
+        return newConversation;
+      }
+      return null;
+    } catch (error) {
+      console.error("Error creating conversation:", error);
+      message.error(localStrings.Messages.GroupCreationFailed || "Failed to create conversation");
+      return null;
+    }
+  };
+
+  // Function to send a message
+  const sendMessage = async () => {
+    if (!user?.id || !currentConversation?.id || !messageText.trim() || !isWebSocketConnected) {
+      return;
+    }
+    
+    // Message length validation
+    if (messageText.length > 500) {
+      message.error(localStrings.Messages.MessageTooLong || "Message too long");
+      return;
+    }
+    
+    // Create a temporary message ID for optimistic UI update
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    const messageContent = messageText.trim();
+    
+    // Create a temporary message object for immediate display
+    const tempMessage: MessageResponseModel = {
+      id: tempId,
+      user_id: user.id,
+      user: {
+        id: user.id,
+        name: user.name,
+        family_name: user.family_name,
+        avatar_url: user.avatar_url
+      },
+      conversation_id: currentConversation.id,
+      content: messageContent,
+      created_at: new Date().toISOString(),
+      isTemporary: true // Flag to identify temporary messages
     };
-  }, []);
+    
+    // Add to messages list immediately for optimistic UI update
+    setMessages(prev => [...prev, tempMessage]);
+    
+    // Clear input field
+    setMessageText("");
+    
+    try {
+      // Send the message to the server via API
+      const createMessageData = {
+        content: messageContent,
+        conversation_id: currentConversation.id,
+        user: {
+          id: user.id,
+          name: user.name,
+          family_name: user.family_name,
+          avatar_url: user.avatar_url
+        }
+      };
+      
+      // First send via REST API
+      const response = await defaultMessagesRepo.createMessage(createMessageData);
+      
+      if (response.data) {
+        // Replace the temporary message with the real one in our local state
+        setMessages(prev => 
+          prev.map(msg => 
+            msg.id === tempId ? { ...response.data, fromServer: true, isTemporary: false } : msg
+          )
+        );
+        
+        // Also send via WebSocket to notify other clients
+        wsSendMessage({
+          type: "message",
+          data: response.data
+        });
+      }
+    } catch (error) {
+      console.error("Error sending message:", error);
+      
+      // Mark the temporary message as failed
+      setMessages(prev => 
+        prev.map(msg => 
+          msg.id === tempId ? { ...msg, sendFailed: true } : msg
+        )
+      );
+      
+      message.error(localStrings.Public.Error || "Failed to send message");
+    }
+    
+    // Scroll to bottom after sending
+    scrollToBottom();
+  };
+
+  // Function to delete a message
+  const deleteMessage = async (messageId: string) => {
+    if (!user?.id || !currentConversation?.id) return;
+    
+    try {
+      // Optimistic UI update
+      setMessages(prev => prev.filter(msg => msg.id !== messageId));
+      
+      // Delete from server
+      await defaultMessagesRepo.deleteMessage({ message_id: messageId });
+    } catch (error) {
+      console.error("Error deleting message:", error);
+      message.error(localStrings.Public.Error || "Error deleting message");
+      
+      // Fetch messages again to reset state
+      if (currentConversation.id) {
+        fetchMessages(currentConversation.id);
+      }
+    }
+  };
+
+  // Function to update conversation details (name, image)
+  const updateConversation = async (conversationId: string, name?: string, image?: string) => {
+    if (!conversationId) return null;
+    
+    try {
+      const updateData: UpdateConversationRequestModel = {
+        conversation_id: conversationId
+      };
+      
+      if (name) updateData.name = name;
+      if (image) updateData.image = image;
+      
+      const response = await defaultMessagesRepo.updateConversation(updateData);
+      
+      if (response.data) {
+        // Update local state
+        setConversations(prev => 
+          prev.map(conv => 
+            conv.id === conversationId 
+              ? { ...conv, name: name || conv.name, image: image || conv.image }
+              : conv
+          )
+        );
+        
+        // Update current conversation if it's the one being edited
+        if (currentConversation?.id === conversationId) {
+          setCurrentConversation(prev => 
+            prev ? { 
+              ...prev, 
+              name: name || prev.name, 
+              image: image || prev.image 
+            } : prev
+          );
+        }
+        
+        return response.data;
+      }
+      return null;
+    } catch (error) {
+      console.error("Error updating conversation:", error);
+      message.error(localStrings.Public.Error || "Error updating conversation");
+      return null;
+    }
+  };
+
+  // Function to mark conversation as read
+  const markConversationAsRead = async (conversationId: string) => {
+    if (!user?.id || !conversationId) return;
+    
+    try {
+      // Call the API to update conversation detail status (mark as read)
+      await defaultMessagesRepo.updateConversationDetail({
+        conversation_id: conversationId,
+        user_id: user.id
+      });
+    } catch (error) {
+      console.error("Error marking conversation as read:", error);
+    }
+  };
+
+  // Helper function to scroll to bottom of message list
+  const scrollToBottom = () => {
+    if (messageListRef.current) {
+      messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
+    }
+  };
 
   return {
     // State
@@ -592,25 +416,35 @@ export const useMessagesViewModel = () => {
     searchText,
     messageText,
     isMessagesEnd,
-    isConversationsEnd,
-    isWebSocketConnected: isConnected,
-    
-    // Refs
-    messageListRef: setMessageListElement,
-    handleScroll,
+    isWebSocketConnected,
+    messageListRef,
     
     // Setters
     setSearchText,
     setMessageText,
-    setCurrentConversation,
+    setCurrentConversation: (conversation: ConversationResponseModel | null) => {
+      setCurrentConversation(conversation);
+      setCurrentPage(1);
+      setIsMessagesEnd(false);
+      
+      // Reset message list when changing conversations
+      setMessages([]);
+      
+      // Mark conversation as read when selected
+      if (conversation?.id) {
+        markConversationAsRead(conversation.id);
+      }
+    },
     
     // Actions
-    sendMessage,
     fetchConversations,
-    loadMoreMessages,
     fetchMessages,
-    createConversation,
+    sendMessage,
     deleteMessage,
-    deleteConversation
+    createConversation,
+    updateConversation,
+    markConversationAsRead,
+    loadMoreMessages,
+    handleScroll
   };
 };

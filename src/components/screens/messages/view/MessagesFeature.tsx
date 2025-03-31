@@ -135,19 +135,6 @@ const MessagesFeature: React.FC = () => {
                 {localStrings.Public.Messages || "Messages"}
               </Title>
               <div>
-                {/* Connection status indicator */}
-                <Badge 
-                  dot 
-                  color={isWebSocketConnected ? "green" : "red"} 
-                  offset={[-2, 2]}
-                  style={{ marginRight: 12 }}
-                >
-                  {isWebSocketConnected ? (
-                    <WifiOutlined style={{ fontSize: 18 }} />
-                  ) : (
-                    <DisconnectOutlined style={{ fontSize: 18 }} />
-                  )}
-                </Badge>
                 <Button 
                   type="primary" 
                   shape="circle" 
@@ -277,18 +264,6 @@ const MessagesFeature: React.FC = () => {
                   </Text>
                 </div>
                 <div style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}>
-                  {/* Connection status indicator in header */}
-                  <Badge 
-                    dot 
-                    color={isWebSocketConnected ? "green" : "red"} 
-                    offset={[-2, 2]}
-                  >
-                    {isWebSocketConnected ? (
-                      <WifiOutlined style={{ fontSize: 16, marginRight: 12 }} />
-                    ) : (
-                      <DisconnectOutlined style={{ fontSize: 16, marginRight: 12 }} />
-                    )}
-                  </Badge>
                   <Button 
                     type="text" 
                     icon={<EllipsisOutlined style={{ fontSize: 20 }} />} 

@@ -9,7 +9,7 @@ import { WebSocketContextType } from './webSocketContextType';
 
 const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined);
 
-export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
   const { user } = useAuth();
   const [isConnected, setIsConnected] = useState(false);
   const [lastMessages, setLastMessages] = useState<Record<string, MessageResponseModel[]>>({});
@@ -21,6 +21,7 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children 
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const visibilityChangeHandled = useRef(false);
+  const messageListenersRef = useRef<((conversationId: string, messages: MessageResponseModel[]) => void)[]>([]);
 
   // Initialize WebSocket connection
   useEffect(() => {
@@ -63,20 +64,37 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children 
         ws.onmessage = (event) => {
           try {
             // Ignore pong messages
-            if (event.data === "pong" || event.data.includes("pong")) {
+            if (event.data === "pong" || (typeof event.data === "string" && event.data.includes("pong"))) {
               return;
             }
             
             const data = JSON.parse(event.data);
             console.log("WebSocket message received:", data);
             
-            if (!data || !data.conversation_id) {
+            if (!data) {
               console.warn("Invalid message format received");
               return;
             }
             
-            // Process the message
-            processIncomingMessage(data);
+            // Process different message types
+            if (data.type === "message") {
+              // It's a chat message
+              const message = data.data;
+              if (message.conversation_id) {
+                addNewMessage(message.conversation_id, message);
+              }
+            } else {
+              // It's a direct message object (most likely case)
+              if (data.conversation_id) {
+                // Format the message to ensure consistent structure
+                const formattedMessage = {
+                  ...data,
+                  isTemporary: false,
+                  fromServer: true
+                };
+                addNewMessage(data.conversation_id, formattedMessage);
+              }
+            }
           } catch (error) {
             console.error("Error processing WebSocket message:", error);
           }
@@ -155,33 +173,91 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children 
     };
   }, [user?.id]);
 
-  // Process incoming messages
-  const processIncomingMessage = (message: MessageResponseModel) => {
-    if (!message.conversation_id) return;
+  // Add a message listener
+  const addMessageListener = (callback: (conversationId: string, messages: MessageResponseModel[]) => void) => {
+    messageListenersRef.current.push(callback);
+    return () => {
+      messageListenersRef.current = messageListenersRef.current.filter(cb => cb !== callback);
+    };
+  };
+
+  // Notify all message listeners
+  const notifyMessageListeners = (conversationId: string, messages: MessageResponseModel[]) => {
+    messageListenersRef.current.forEach(callback => {
+      try {
+        callback(conversationId, messages);
+      } catch (error) {
+        console.error("Error in message listener:", error);
+      }
+    });
+  };
+
+  // Add a new message to a conversation - enhanced version
+  const addNewMessage = (conversationId: string, message: MessageResponseModel) => {
+    if (!conversationId || !message) {
+      console.warn("Invalid message or conversation ID", conversationId, message);
+      return;
+    }
     
-    const conversationId = message.conversation_id;
+    console.log("Adding new message to conversation", conversationId, message);
     
-    // Add message to conversation messages
     setLastMessages(prev => {
       const conversationMessages = prev[conversationId] || [];
       
-      // Check if the message already exists to avoid duplicates
-      const messageExists = conversationMessages.some(
-        msg => msg.id === message.id || 
-        (msg.content === message.content && 
-         msg.user_id === message.user_id && 
-         Math.abs(new Date(msg.created_at || "").getTime() - 
-                  new Date(message.created_at || "").getTime()) < 5000)
+      // Debug để xem các tin nhắn hiện tại trong cuộc trò chuyện
+      console.log(`Current messages in conversation ${conversationId}:`, 
+        conversationMessages.map(msg => ({ 
+          id: msg.id, 
+          content: msg.content,
+          user_id: msg.user_id,
+          time: msg.created_at
+        }))
       );
       
+      // Debug message being checked
+      console.log("New message to check:", {
+        id: message.id,
+        content: message.content,
+        user_id: message.user_id,
+        time: message.created_at
+      });
+      
+      // Cải thiện logic kiểm tra trùng lặp - chỉ kiểm tra ID nếu có
+      const messageExists = message.id 
+        ? conversationMessages.some(msg => msg.id === message.id)
+        : conversationMessages.some(
+            msg => msg.content === message.content && 
+                  msg.user_id === message.user_id &&
+                  // Chỉ kiểm tra tin nhắn được tạo trong vòng 2 giây
+                  Math.abs(new Date(msg.created_at || "").getTime() - 
+                          new Date(message.created_at || "").getTime()) < 2000
+          );
+      
+      console.log(`Message duplicate check result: ${messageExists}`);
+      
       if (messageExists) {
+        console.log("Message already exists, not adding duplicate");
         return prev;
       }
       
-      // Add the new message and sort by time
-      const updatedMessages = [...conversationMessages, message].sort(
+      // Add new message, ensure it's properly formatted
+      const formattedMessage = {
+        ...message,
+        isTemporary: false,
+        fromServer: true
+      };
+      
+      // Add new message and sort
+      const updatedMessages = [...conversationMessages, formattedMessage].sort(
         (a, b) => new Date(a.created_at || "").getTime() - new Date(b.created_at || "").getTime()
       );
+      
+      console.log("Updated messages for conversation:", 
+        updatedMessages.map(msg => ({ id: msg.id, content: msg.content, user_id: msg.user_id }))
+      );
+      
+      // Notify listeners about new message
+      notifyMessageListeners(conversationId, updatedMessages);
       
       return {
         ...prev,
@@ -195,10 +271,10 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children 
         ...prev,
         [conversationId]: (prev[conversationId] || 0) + 1
       }));
-      
-      // Update conversation order
-      updateConversationOrder(conversationId);
     }
+    
+    // Update conversation order
+    updateConversationOrder(conversationId);
   };
 
   // Update the order of conversations to move the one with new messages to the top
@@ -225,13 +301,16 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children 
   const sendMessage = (message: any) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       console.error("WebSocket not connected");
-      return;
+      return false;
     }
     
     try {
+      console.log("Sending WebSocket message:", message);
       wsRef.current.send(JSON.stringify(message));
+      return true;
     } catch (error) {
       console.error("Error sending message:", error);
+      return false;
     }
   };
 
@@ -253,50 +332,43 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   // Update messages for a specific conversation
   const updateMessagesForConversation = (conversationId: string, messages: MessageResponseModel[]) => {
-    setLastMessages(prev => ({
-      ...prev,
-      [conversationId]: messages.sort(
-        (a, b) => new Date(a.created_at || "").getTime() - new Date(b.created_at || "").getTime()
-      )
+    if (!conversationId || !messages) return;
+    
+    // Format incoming messages to ensure consistent structure
+    const formattedMessages = messages.map(msg => ({
+      ...msg,
+      isTemporary: false,
+      fromServer: true
     }));
+    
+    setLastMessages(prev => {
+      // Get existing messages
+      const existingMessages = prev[conversationId] || [];
+      
+      // Merge existing and new messages, removing duplicates
+      const allMessages = [...existingMessages, ...formattedMessages];
+      const uniqueMessages = Array.from(
+        new Map(allMessages.map(item => [item.id, item])).values()
+      );
+      
+      // Sort by timestamp
+      const sortedMessages = uniqueMessages.sort(
+        (a, b) => new Date(a.created_at || "").getTime() - new Date(b.created_at || "").getTime()
+      );
+      
+      // Notify listeners about updated messages
+      notifyMessageListeners(conversationId, sortedMessages);
+      
+      return {
+        ...prev,
+        [conversationId]: sortedMessages
+      };
+    });
   };
 
   // Get messages for a specific conversation
   const getMessagesForConversation = (conversationId: string): MessageResponseModel[] => {
     return lastMessages[conversationId] || [];
-  };
-
-  // Add a new message to a conversation
-  const addNewMessage = (conversationId: string, message: MessageResponseModel) => {
-    setLastMessages(prev => {
-      const conversationMessages = prev[conversationId] || [];
-      
-      // Check for duplicates
-      const messageExists = conversationMessages.some(
-        msg => msg.id === message.id || 
-        (msg.content === message.content && 
-         msg.user_id === message.user_id && 
-         Math.abs(new Date(msg.created_at || "").getTime() - 
-                  new Date(message.created_at || "").getTime()) < 5000)
-      );
-      
-      if (messageExists) {
-        return prev;
-      }
-      
-      // Add new message and sort
-      const updatedMessages = [...conversationMessages, message].sort(
-        (a, b) => new Date(a.created_at || "").getTime() - new Date(b.created_at || "").getTime()
-      );
-      
-      return {
-        ...prev,
-        [conversationId]: updatedMessages
-      };
-    });
-    
-    // Update conversation order
-    updateConversationOrder(conversationId);
   };
 
   // Update conversations list
@@ -309,23 +381,27 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children 
     return conversations;
   };
 
+  // Create the context value
+  const contextValue: WebSocketContextType = {
+    isConnected,
+    lastMessages,
+    unreadMessages,
+    sendMessage,
+    currentConversationId,
+    setCurrentConversationId,
+    markMessagesAsRead,
+    updateMessagesForConversation,
+    getMessagesForConversation,
+    resetUnreadCount,
+    addNewMessage,
+    updateConversations,
+    getConversations,
+    conversations,
+    addMessageListener
+  };
+
   return (
-    <WebSocketContext.Provider value={{
-      isConnected,
-      lastMessages,
-      unreadMessages,
-      sendMessage,
-      currentConversationId,
-      setCurrentConversationId,
-      markMessagesAsRead,
-      updateMessagesForConversation,
-      getMessagesForConversation,
-      resetUnreadCount,
-      addNewMessage,
-      updateConversations,
-      getConversations,
-      conversations
-    }}>
+    <WebSocketContext.Provider value={contextValue}>
       {children}
     </WebSocketContext.Provider>
   );

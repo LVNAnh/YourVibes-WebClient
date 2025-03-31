@@ -98,9 +98,6 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, onDelete }) => {
         <div style={{ fontSize: 10, textAlign: "right", marginTop: 4, opacity: 0.7 }}>
           {message.isTemporary ? (
             <span style={{ color: isMyMessage ? "rgba(255, 255, 255, 0.7)" : "inherit" }}>
-              <small>
-                {localStrings.Public.Sending || "Sending..."}
-              </small>
             </span>
           ) : (
             <span style={{ 
