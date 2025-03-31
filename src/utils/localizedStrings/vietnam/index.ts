@@ -66,6 +66,7 @@ export const VnLocalizedStrings = {
     Messages: "Tin Nhắn",
     SuggestedFriend: "Những người bạn có thể biết",
     LoadMore: "Tải thêm",
+    Search: "Tìm kiếm",
   },
   Form: {
     Label: {
@@ -377,5 +378,10 @@ Messages: {
   AllContactsTab:"Tất cả liên hệ",
   Conversations: "Trò chuyện",
   SelectedMembers: "Thành viên đã chọn",
+  StartConversation: "Bắt đầu cuộc trò chuyện",
+  SelectConversation: "Chọn cuộc trò chuyện",
+  SelectConversationToChat: "Chọn cuộc trò chuyện để chat",
+  TypeMessage: "Nhập tin nhắn",
+  ErrorFetchingConversations: "Lỗi không lấy được cuộc trò chuyện"
 }
 };

@@ -2,16 +2,29 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { message } from "antd";
 import { useAuth } from "@/context/auth/useAuth";
 import { defaultMessagesRepo } from "@/api/features/messages/MessagesRepo";
-import { ApiPath } from "@/api/ApiPath";
 import { ConversationResponseModel } from "@/api/features/messages/models/ConversationModel";
 import { MessageResponseModel } from "@/api/features/messages/models/MessageModel";
+import { useWebSocket } from "@/context/websocket/useWebSocket";
 
 /**
- * Custom hook để quản lý logic của tính năng tin nhắn
- * Đã được tối ưu để tránh request liên tục và sử dụng refs cho stable functions
+ * Custom hook for managing messages feature logic
+ * Optimized to avoid repeated requests and using refs for stable functions
  */
 export const useMessagesViewModel = () => {
   const { user, localStrings } = useAuth();
+  const {
+    isConnected,
+    lastMessages,
+    updateMessagesForConversation,
+    getMessagesForConversation,
+    updateConversations,
+    getConversations,
+    conversations: wsConversations,
+    currentConversationId: wsCurrentConversationId,
+    setCurrentConversationId: setWsCurrentConversationId,
+    resetUnreadCount,
+    addNewMessage
+  } = useWebSocket();
   
   // State for conversations
   const [conversations, setConversations] = useState<ConversationResponseModel[]>([]);
@@ -30,17 +43,45 @@ export const useMessagesViewModel = () => {
   const [searchText, setSearchText] = useState("");
   const [messageText, setMessageText] = useState("");
   
-  // WebSocket connection
-  const socketRef = useRef<WebSocket | null>(null);
-  
-  // Các biến để theo dõi trạng thái đã load để tránh gọi nhiều lần
+  // Variables to track loading state to avoid multiple calls
   const conversationsLoadedRef = useRef(false);
   const isApiCallingRef = useRef(false);
+  const messageListRef = useRef<HTMLDivElement | null>(null);
+  const firstLoadRef = useRef(true);
+  const autoScrollRef = useRef(true);
+  const fetchingMoreRef = useRef(false);
   
-  // Sử dụng useRef để lưu trữ các hàm một cách ổn định
+  // Initialize messages from WebSocket context when available
+  useEffect(() => {
+    if (wsConversations.length > 0) {
+      setConversations(wsConversations);
+    }
+  }, [wsConversations]);
+  
+  // Sync current conversation between WebSocket context and local state
+  useEffect(() => {
+    if (currentConversation?.id) {
+      setWsCurrentConversationId(currentConversation.id);
+      resetUnreadCount(currentConversation.id);
+    } else {
+      setWsCurrentConversationId(null);
+    }
+  }, [currentConversation?.id, setWsCurrentConversationId, resetUnreadCount]);
+  
+  // Sync messages with WebSocket context
+  useEffect(() => {
+    if (currentConversation?.id) {
+      const contextMessages = getMessagesForConversation(currentConversation.id);
+      if (contextMessages.length > 0) {
+        setMessages(contextMessages);
+      }
+    }
+  }, [currentConversation?.id, getMessagesForConversation]);
+
+  // Use stable ref for API functions
   const stableActions = useRef({
     fetchConversations: async (page = 1, limit = 20) => {
-      // Nếu đang loading hoặc đã có dữ liệu và là request trang 1, bỏ qua
+      // Skip if already loading, or data already loaded and on first page
       if (!user?.id || isApiCallingRef.current || 
           (page === 1 && conversationsLoadedRef.current)) return;
       
@@ -48,10 +89,10 @@ export const useMessagesViewModel = () => {
       setConversationsLoading(true);
       
       try {
-        // Thay vì gọi API cho từng conversation, chỉ sử dụng dữ liệu từ conversation_details
+        // Get conversation details for the user
         const conversationDetailsResponse = await defaultMessagesRepo.getConversationDetailByUserID({
           user_id: user.id,
-          limit: 100, // Lấy số lượng lớn hơn để tránh phải gọi lại
+          limit: 100, // Get more to avoid refetching
           page: 1
         });
         
@@ -59,7 +100,7 @@ export const useMessagesViewModel = () => {
           // Extract conversations from conversation details
           const conversationDetails = conversationDetailsResponse.data as any[];
           
-          // Lọc ra các conversation hợp lệ đã có đầy đủ thông tin
+          // Filter valid conversations with complete information
           const validConversations = conversationDetails
             .filter(detail => detail.conversation && detail.conversation.id)
             .map(detail => ({
@@ -70,63 +111,72 @@ export const useMessagesViewModel = () => {
               updated_at: detail.conversation.updated_at
             }));
           
-          // Loại bỏ các conversation trùng lặp nếu có
+          // Remove duplicates
           const uniqueConversations = Array.from(
             new Map(validConversations.map(item => [item.id, item])).values()
           ) as ConversationResponseModel[];
           
-          // Sort conversations by most recent
+          // Sort by most recent activity
           const sortedConversations = [...uniqueConversations].sort((a, b) => {
             const dateA = new Date(a.updated_at || a.created_at || "").getTime();
             const dateB = new Date(b.updated_at || b.created_at || "").getTime();
-            return dateB - dateA; // Sort by most recent first
+            return dateB - dateA; // Most recent first
           });
           
           if (page === 1) {
             setConversations(sortedConversations);
-            // Đánh dấu đã load để không load lại nữa
+            // Mark as loaded to avoid reloading
             conversationsLoadedRef.current = true;
+            // Update WebSocket context
+            updateConversations(sortedConversations);
           } else {
             setConversations(prev => [...prev, ...sortedConversations]);
           }
           
-          // Check if we've reached the end of the conversations
-          setIsConversationsEnd(true); // Since we're fetching all at once
+          // All conversations fetched at once 
+          setIsConversationsEnd(true);
           setConversationPage(page);
         } else {
           // No conversations found
           setConversations([]);
           setIsConversationsEnd(true);
-          // Vẫn đánh dấu là đã load để không gọi lại
           conversationsLoadedRef.current = true;
         }
       } catch (error) {
         console.error("Error fetching conversations:", error);
-        message.error(localStrings.Public.ErrorFetchingConversations || "Error fetching conversations");
+        message.error(localStrings.Messages.ErrorFetchingConversations || "Error fetching conversations");
       } finally {
         setConversationsLoading(false);
-        // Cho phép gọi API lại sau 2 giây
+        // Allow API calls again after a delay
         setTimeout(() => {
           isApiCallingRef.current = false;
         }, 2000);
       }
     },
     
-    fetchMessages: async (conversationId: string, page = 1, limit = 20) => {
-      if (!conversationId || messagesLoading) return;
+    fetchMessages: async (conversationId: string, page = 1, limit = 20, forceRefresh = false) => {
+      if (!conversationId || (messagesLoading && !forceRefresh)) return;
       
-      // Reset messages when changing conversations
+      // Reset pagination when changing conversations
       if (page === 1) {
-        setMessages([]);
+        if (!forceRefresh && getMessagesForConversation(conversationId).length > 0) {
+          // Use cached messages from WebSocket context first
+          setMessages(getMessagesForConversation(conversationId));
+          // Still fetch in background to ensure up-to-date data
+          fetchingMoreRef.current = true;
+        } else {
+          setMessages([]);
+        }
       }
       
       setMessagesLoading(true);
       
       try {
+        // Fetch messages from API
         const response = await defaultMessagesRepo.getMessagesByConversationId({
           conversation_id: conversationId,
           page,
-          limit
+          limit: 50 // Increased limit to fetch more messages at once
         });
         
         if (response.data) {
@@ -139,49 +189,60 @@ export const useMessagesViewModel = () => {
             return new Date(a.created_at || "").getTime() - new Date(b.created_at || "").getTime();
           });
           
+          // Add fromServer flag to identify messages
+          const markedMessages = fetchedMessages.map(msg => ({
+            ...msg,
+            fromServer: true
+          }));
+          
           if (page === 1) {
-            // Thêm property để đánh dấu tin nhắn từ server
-            const markedMessages = fetchedMessages.map(msg => ({
-              ...msg,
-              fromServer: true
-            }));
-            
             setMessages(markedMessages);
+            // Update WebSocket context
+            updateMessagesForConversation(conversationId, markedMessages);
+            
+            // Auto-scroll to bottom on initial load
+            setTimeout(() => {
+              if (messageListRef.current && autoScrollRef.current) {
+                messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
+              }
+            }, 200);
           } else {
-            // Merge với tin nhắn hiện có, đảm bảo không có trùng lặp
+            // Merge with existing messages, avoiding duplicates
             setMessages(prev => {
-              // Tập hợp ID tin nhắn hiện có
+              // Get existing message IDs
               const existingIds = new Set(prev.map(msg => msg.id));
               
-              // Lọc tin nhắn chưa có trong danh sách
+              // Filter new messages
               const newMessages = fetchedMessages.filter(msg => !existingIds.has(msg.id))
                 .map(msg => ({
                   ...msg,
                   fromServer: true
                 }));
               
-              // Kết hợp tin nhắn mới với tin nhắn hiện có
+              // Combine new and existing messages
               const mergedMessages = [...newMessages, ...prev];
               
-              // Sắp xếp lại theo thời gian
+              // Sort by time
               return mergedMessages.sort((a, b) => {
                 return new Date(a.created_at || "").getTime() - new Date(b.created_at || "").getTime();
               });
             });
+            
+            // Also update in WebSocket context
+            if (newMessages && newMessages.length > 0) {
+              const updatedContextMessages = [...getMessagesForConversation(conversationId), ...newMessages];
+              updateMessagesForConversation(conversationId, updatedContextMessages);
+            }
           }
           
-          // Check if we've reached the end of the messages
-          if (fetchedMessages.length < limit) {
-            setIsMessagesEnd(true);
-          } else {
-            setIsMessagesEnd(false);
-          }
-          
+          // Check if we've reached the end of messages
+          setIsMessagesEnd(fetchedMessages.length < limit);
           setMessagePage(page);
         } else {
-          // If no messages are found, set an empty array
+          // No messages found
           if (page === 1) {
             setMessages([]);
+            updateMessagesForConversation(conversationId, []);
           }
           setIsMessagesEnd(true);
         }
@@ -190,16 +251,17 @@ export const useMessagesViewModel = () => {
         message.error(localStrings.Public.ErrorFetchingMessages || "Error fetching messages");
       } finally {
         setMessagesLoading(false);
+        fetchingMoreRef.current = false;
       }
     },
     
     sendMessage: async (content: string, conversationId: string) => {
       if (!conversationId || !content.trim() || !user) return;
       
-      // Tạo ID tạm thời để theo dõi tin nhắn
+      // Generate temporary ID for optimistic update
       const tempId = `temp_${Date.now()}`;
       
-      // Create temporary message for optimistic UI update
+      // Create temporary message for immediate display
       const tempMessage: MessageResponseModel = {
         id: tempId,
         user_id: user.id,
@@ -215,11 +277,22 @@ export const useMessagesViewModel = () => {
         isTemporary: true
       };
       
-      // Add temporary message to the list
+      // Add temporary message to UI
       setMessages(prev => [...prev, tempMessage]);
+      addNewMessage(conversationId, tempMessage);
+      
+      // Enable auto-scroll when sending a message
+      autoScrollRef.current = true;
+      
+      // Scroll to bottom to show the sent message
+      setTimeout(() => {
+        if (messageListRef.current) {
+          messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
+        }
+      }, 50);
       
       try {
-        // Send message to the server
+        // Send message to server
         const response = await defaultMessagesRepo.createMessage({
           content,
           conversation_id: conversationId,
@@ -232,27 +305,34 @@ export const useMessagesViewModel = () => {
         });
         
         if (response.data) {
-          // Tạo reference đến real message từ API
+          // Create reference to real message from API
           const realMessage = response.data as MessageResponseModel;
           
-          // Thêm thuộc tính fromServer vào tin nhắn thật
+          // Add fromServer attribute
           const serverMessage = {
             ...realMessage,
             fromServer: true,
             isTemporary: false
           };
           
-          // Replace temporary message with the real one
+          // Replace temporary message with real one
           setMessages(prev => 
             prev.map(msg => 
               msg.id === tempId ? serverMessage : msg
             )
           );
           
-          // Thành công, không còn cần hiển thị "đang gửi"
+          // Update in WebSocket context too
+          updateMessagesForConversation(
+            conversationId,
+            getMessagesForConversation(conversationId).map(msg => 
+              msg.id === tempId ? serverMessage : msg
+            )
+          );
+          
           console.log("Message sent successfully:", serverMessage);
           
-          // Cập nhật thứ tự conversation
+          // Update conversation order
           setConversations(prev => {
             const conversationIndex = prev.findIndex(c => c.id === conversationId);
             if (conversationIndex < 0) return prev;
@@ -260,33 +340,26 @@ export const useMessagesViewModel = () => {
             const updatedConversations = [...prev];
             const conversation = { ...updatedConversations[conversationIndex] };
             
-            // Cập nhật thời gian
+            // Update timestamp
             conversation.updated_at = new Date().toISOString();
             
-            // Xóa conversation tại vị trí cũ
+            // Remove from old position
             updatedConversations.splice(conversationIndex, 1);
             
-            // Thêm vào đầu danh sách
+            // Add to top
             updatedConversations.unshift(conversation);
             
             return updatedConversations;
           });
-          
-          // Sau 10 giây, force refresh để đảm bảo tin nhắn được lưu trữ đúng
-          setTimeout(() => {
-            if (currentConversation?.id === conversationId) {
-              stableActions.current.fetchMessages(conversationId, 1, 50);
-            }
-          }, 10000);
         }
       } catch (error) {
         console.error("Error sending message:", error);
         message.error(localStrings.Public.ErrorSendingMessage || "Error sending message");
         
-        // Remove the temporary message on error
+        // Remove temporary message on error
         setMessages(prev => prev.filter(msg => msg.id !== tempId));
         
-        // Cố gắng gửi lại sau 2 giây nếu có lỗi network
+        // Try to resend after 2 seconds if online
         setTimeout(() => {
           if (navigator.onLine) {
             console.log("Retrying to send message...");
@@ -311,17 +384,18 @@ export const useMessagesViewModel = () => {
         if (response.data) {
           const newConversation = response.data as ConversationResponseModel;
           
-          // Add the current user to the conversation first
+          // Add current user to conversation
           try {
             await defaultMessagesRepo.createConversationDetail({
               conversation_id: newConversation.id,
               user_id: user.id
             });
             
-            // Add the new conversation to the list
+            // Add to conversation list
             setConversations(prev => [newConversation, ...prev]);
+            updateConversations([newConversation, ...getConversations()]);
             
-            // Set it as the current conversation
+            // Set as current conversation
             setCurrentConversation(newConversation);
             
             return newConversation;
@@ -342,8 +416,16 @@ export const useMessagesViewModel = () => {
           message_id: messageId
         });
         
-        // Remove the message from the list
+        // Remove from UI and context
         setMessages(prev => prev.filter(msg => msg.id !== messageId));
+        
+        // Also update in WebSocket context
+        if (currentConversation?.id) {
+          updateMessagesForConversation(
+            currentConversation.id,
+            getMessagesForConversation(currentConversation.id).filter(msg => msg.id !== messageId)
+          );
+        }
         
         message.success(localStrings.Public.MessageDeleted || "Message deleted");
       } catch (error) {
@@ -358,10 +440,11 @@ export const useMessagesViewModel = () => {
           conversation_id: conversationId
         });
         
-        // Remove the conversation from the list
+        // Remove from list
         setConversations(prev => prev.filter(conv => conv.id !== conversationId));
+        updateConversations(getConversations().filter(conv => conv.id !== conversationId));
         
-        // If the deleted conversation is the current one, clear it
+        // Clear if current conversation
         if (currentConversation?.id === conversationId) {
           setCurrentConversation(null);
           setMessages([]);
@@ -375,236 +458,85 @@ export const useMessagesViewModel = () => {
     }
   });
 
-  // Connect to WebSocket khi user thay đổi - Loại bỏ phụ thuộc vào currentConversation?.id
+  // Initial conversations load
   useEffect(() => {
-    if (!user?.id) return;
-    
-    // Disconnect existing socket if any
-    if (socketRef.current) {
-      socketRef.current.close();
-      socketRef.current = null;
+    if (user?.id) {
+      // Use requestIdleCallback for optimization
+      if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(() => {
+          stableActions.current.fetchConversations();
+        });
+      } else {
+        // Fallback for browsers without requestIdleCallback
+        const timer = setTimeout(() => {
+          stableActions.current.fetchConversations();
+        }, 300);
+        
+        return () => clearTimeout(timer);
+      }
     }
-    
-    const wsUrl = `${ApiPath.CONNECT_TO_WEBSOCKET}${user.id}`;
-    
-    try {
-      console.log("Connecting to WebSocket:", wsUrl);
-      const ws = new WebSocket(wsUrl);
-      
-      let pingInterval: ReturnType<typeof setInterval> | null = null;
-      
-      ws.onopen = () => {
-        console.log("WebSocket connection established successfully");
-        
-        // Cơ chế ping-pong để giữ kết nối sống và kiểm tra sự gián đoạn
-        pingInterval = setInterval(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            // Send ping message to keep the connection alive
-            try {
-              ws.send(JSON.stringify({ type: "ping" }));
-            } catch (err) {
-              console.error("Error sending ping:", err);
-            }
-          } else {
-            // WebSocket is not open, try to reconnect
-            if (pingInterval) {
-              clearInterval(pingInterval);
-              // Attempt to reconnect
-              console.log("WebSocket connection lost, attempting to reconnect...");
-              try {
-                ws.close();
-                // Create new instance in the onclose handler
-              } catch (err) {
-                console.error("Error closing broken WebSocket:", err);
-              }
-            }
-          }
-        }, 30000); // Check every 30 seconds
-      };
-      
-      ws.onmessage = (event) => {
-        try {
-          // Log raw message để debug
-          console.log("WebSocket raw message:", event.data);
-          
-          // Kiểm tra nếu là tin nhắn pong
-          if (event.data === "pong" || event.data.includes("pong")) {
-            console.log("Received pong from server");
-            return;
-          }
-          
-          // Parse JSON message
-          const newMessage = JSON.parse(event.data);
-          console.log("WebSocket parsed message:", newMessage);
-          
-          // Kiểm tra cấu trúc message
-          if (!newMessage) {
-            console.warn("WebSocket received empty message");
-            return;
-          }
-          
-          // Kiểm tra conversation_id
-          if (!newMessage.conversation_id) {
-            console.warn("WebSocket message missing conversation_id:", newMessage);
-            return;
-          }
-          
-          // Kiểm tra nếu message này là cho conversation hiện tại
-          // Không sử dụng closure capture cho currentConversation (để tránh stale closure)
-          const currentConvId = currentConversation?.id;
-          
-          if (currentConvId && newMessage.conversation_id === currentConvId) {
-            console.log("Adding new message to current conversation:", newMessage);
-            
-            // Kiểm tra xem message đã tồn tại trong danh sách chưa
-            setMessages(prev => {
-              // Nếu message này đã tồn tại (có thể là tin nhắn tạm thời hoặc đã có), không thêm vào nữa
-              const messageExists = prev.some(msg => 
-                (msg.id === newMessage.id) || 
-                (msg.content === newMessage.content && 
-                 msg.user_id === newMessage.user_id && 
-                 Math.abs(new Date(msg.created_at || "").getTime() - 
-                          new Date(newMessage.created_at || "").getTime()) < 5000)
-              );
-              
-              if (messageExists) {
-                console.log("Message already exists in list, not adding duplicate");
-                return prev;
-              }
-              
-              console.log("Adding new message to list");
-              
-              // Thêm message mới vào cuối danh sách
-              const newMessages = [...prev, newMessage];
-              
-              // Sắp xếp lại tin nhắn theo thời gian để đảm bảo thứ tự đúng
-              return newMessages.sort((a, b) => {
-                return new Date(a.created_at || "").getTime() - new Date(b.created_at || "").getTime();
-              });
-            });
-            
-            // Force refresh messages after a short delay to ensure consistency
-            setTimeout(() => {
-              if (currentConversation?.id === newMessage.conversation_id) {
-                console.log("Syncing messages for conversation after receiving new message");
-                // Sử dụng page 1 và limit lớn hơn để lấy đủ tin nhắn
-                stableActions.current.fetchMessages(newMessage.conversation_id, 1, 50);
-              }
-            }, 1000);
-          } else {
-            console.log("Message is for another conversation");
-          }
-          
-          // Update conversation list without re-fetching
-          setConversations(prev => {
-            if (!prev.length) return prev;
-            
-            const conversationIndex = prev.findIndex(c => c.id === newMessage.conversation_id);
-            if (conversationIndex >= 0) {
-              console.log("Updating conversation order for new message");
-              // Move the conversation with new message to the top
-              const updatedConversations = [...prev];
-              const conversation = { ...updatedConversations[conversationIndex] };
-              // Cập nhật thời gian
-              conversation.updated_at = new Date().toISOString();
-              updatedConversations.splice(conversationIndex, 1);
-              updatedConversations.unshift(conversation);
-              return updatedConversations;
-            }
-            
-            // Nếu là conversation mới, load lại danh sách conversation
-            console.log("Message is for a new conversation, refreshing conversation list");
-            // Đặt timeout để đảm bảo không gọi API quá nhanh
-            setTimeout(() => {
-              // Reset conversation loaded flag to force refresh
-              conversationsLoadedRef.current = false;
-              stableActions.current.fetchConversations();
-            }, 500);
-            
-            return prev;
-          });
-        } catch (error) {
-          console.error("Error processing WebSocket message:", error);
-        }
-      };
-      
-      ws.onerror = (error) => {
-        console.error("WebSocket error:", error);
-      };
-      
-      ws.onclose = (event) => {
-        console.log("WebSocket connection closed", event.code, event.reason);
-        
-        // Clear ping interval if it exists
-        if (pingInterval) {
-          clearInterval(pingInterval);
-          pingInterval = null;
-        }
-        
-        // Attempt to reconnect after 5 seconds if not closed intentionally
-        if (event.code !== 1000) {
-          console.log("Attempting to reconnect WebSocket in 5 seconds...");
-          setTimeout(() => {
-            if (user?.id) {
-              // Reset WebSocket ref
-              socketRef.current = null;
-              // Create new WebSocket connection
-              try {
-                const newWs = new WebSocket(wsUrl);
-                // Apply same handlers...
-                newWs.onopen = ws.onopen;
-                newWs.onmessage = ws.onmessage;
-                newWs.onerror = ws.onerror;
-                newWs.onclose = ws.onclose;
-                socketRef.current = newWs;
-              } catch (error) {
-                console.error("Error reconnecting WebSocket:", error);
-              }
-            }
-          }, 5000);
-        }
-      };
-      
-      socketRef.current = ws;
-      
-      // Clean up WebSocket connection on unmount
-      return () => {
-        if (pingInterval) {
-          clearInterval(pingInterval);
-        }
-        
-        if (socketRef.current) {
-          // Use 1000 code to indicate clean close
-          socketRef.current.close(1000, "Component unmounting");
-          socketRef.current = null;
-        }
-      };
-    } catch (error) {
-      console.error("Error creating WebSocket connection:", error);
-    }
-  }, [user?.id]); // Chỉ phụ thuộc vào user?.id để tránh stale closures
+  }, [user?.id]);
 
-  // Cơ chế tự động đồng bộ tin nhắn nếu conversation active
+  // Auto-refresh mechanism for messages
   useEffect(() => {
     if (!currentConversation?.id) return;
     
-    // Khi conversation thay đổi, load tin nhắn mới một lần
-    stableActions.current.fetchMessages(currentConversation.id);
+    // Initial fetch when conversation changes
+    if (firstLoadRef.current && currentConversation?.id) {
+      stableActions.current.fetchMessages(currentConversation.id, 1, 50);
+      firstLoadRef.current = false;
+    }
     
-    // Cài đặt interval cho việc đồng bộ định kỳ
-    const syncInterval = setInterval(() => {
-      if (currentConversation?.id) {
-        console.log("Auto-syncing messages for active conversation");
-        stableActions.current.fetchMessages(currentConversation.id, 1, 50);
+    // Set up auto-refresh
+    const refreshInterval = setInterval(() => {
+      if (currentConversation?.id && document.visibilityState === 'visible' && !fetchingMoreRef.current) {
+        console.log("Auto-refreshing messages for conversation:", currentConversation.id);
+        stableActions.current.fetchMessages(currentConversation.id, 1, 50, true);
       }
-    }, 15000); // Sync every 15 seconds
+    }, 30000); // Every 30 seconds
+    
+    // Visibility change handler
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && currentConversation?.id) {
+        console.log("Tab became visible, refreshing messages");
+        stableActions.current.fetchMessages(currentConversation.id, 1, 50, true);
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     
     return () => {
-      clearInterval(syncInterval);
+      clearInterval(refreshInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [currentConversation?.id]);
 
-  // Memoize API functions để đảm bảo tham chiếu cố định
+  // Handle scroll events to detect when user scrolls away from bottom
+  const handleScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
+    if (messageListRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = messageListRef.current;
+      
+      // If user is near bottom, enable auto-scroll for new messages
+      const isNearBottom = scrollTop + clientHeight >= scrollHeight - 80;
+      autoScrollRef.current = isNearBottom;
+    }
+  }, []);
+
+  // Set message list ref
+  const setMessageListElement = useCallback((element: HTMLDivElement | null) => {
+    messageListRef.current = element;
+    
+    // Auto-scroll to bottom on initial load
+    if (element && currentConversation?.id && messages.length > 0) {
+      setTimeout(() => {
+        if (messageListRef.current) {
+          messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
+        }
+      }, 200);
+    }
+  }, [currentConversation?.id, messages.length]);
+
+  // Create memoized functions to prevent unnecessary re-renders
   const fetchConversations = useCallback((page = 1) => {
     stableActions.current.fetchConversations(page);
   }, []);
@@ -633,18 +565,20 @@ export const useMessagesViewModel = () => {
     stableActions.current.deleteConversation(conversationId);
   }, []);
   
-  // Load more messages (older messages)
+  // Load more (older) messages
   const loadMoreMessages = useCallback(() => {
-    if (currentConversation?.id) {
+    if (currentConversation?.id && !fetchingMoreRef.current) {
+      fetchingMoreRef.current = true;
       stableActions.current.fetchMessages(currentConversation.id, messagePage + 1);
     }
   }, [currentConversation?.id, messagePage]);
 
-  // Reset biến đã loaded khi component unmount
+  // Reset loaded flag on unmount
   useEffect(() => {
     return () => {
       conversationsLoadedRef.current = false;
       isApiCallingRef.current = false;
+      firstLoadRef.current = true;
     };
   }, []);
 
@@ -659,6 +593,11 @@ export const useMessagesViewModel = () => {
     messageText,
     isMessagesEnd,
     isConversationsEnd,
+    isWebSocketConnected: isConnected,
+    
+    // Refs
+    messageListRef: setMessageListElement,
+    handleScroll,
     
     // Setters
     setSearchText,

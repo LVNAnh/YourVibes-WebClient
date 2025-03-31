@@ -68,6 +68,7 @@ export const ENGLocalizedStrings = {
     Messages: "Messages",
     SuggestedFriends: "Suggested Friends",
     LoadMore: "Load more",
+    Search: "Search",
   },
   Form: {
     Label: {
@@ -379,6 +380,10 @@ export const ENGLocalizedStrings = {
     AllContactsTab:"All Contacts",
     Conversations: "Conversations",
     SelectedMembers: "Selected Members",
-
+    StartConversation: "Start Conversation",
+    SelectConversation: "Select Conversation",
+    SelectConversationToChat: "Select Conversation To Chat",
+    TypeMessage: "Type a message",
+    ErrorFetchingConversations:"Error fetching conversation",
   }
 };

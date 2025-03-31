@@ -1,5 +1,6 @@
 export interface CreateConversationDetailRequestModel {
     conversation_id?: string,
+    last_mess?: string,
     user_id?: string,
 }
 
@@ -9,7 +10,6 @@ export interface GetConversationDetailByIDRequestModel {
 }
 
 export interface GetConversationDetailByUserIDRequestModel {
-    user_id?: string,
     conversation_id?: string,
     limit?: number,
     page?: number,
@@ -18,6 +18,11 @@ export interface GetConversationDetailByUserIDRequestModel {
 export interface DeleteConversationDetailRequestModel {
     user_id?: string,
     conversation_id?: string,
+}
+
+export interface UpdateConversationDetail {
+    conversation_id?: string,
+    user_id?: string,
 }
 
 export interface ConversationDetailResponseModel {
@@ -36,4 +41,6 @@ export interface ConversationDetailResponseModel {
         created_at?: string,
         updated_at?: string,
     }
+    last_mess_status?: boolean,
+    last_mess?: string,
 }
