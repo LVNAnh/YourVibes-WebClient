@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/context/auth/useAuth";
 import { useMessagesViewModel } from "../viewModel/MessagesViewModel";
-import { Avatar, Button, Empty, Input, Layout, List, Skeleton, Spin, Typography, Popover } from "antd";
+import { Avatar, Button, Empty, Input, Layout, List, Skeleton, Spin, Typography, Popover, Badge } from "antd";
 import { SendOutlined, EllipsisOutlined, SearchOutlined, ArrowLeftOutlined, PlusOutlined, SmileOutlined } from "@ant-design/icons";
 import useColor from "@/hooks/useColor";
 import { ConversationResponseModel } from "@/api/features/messages/models/ConversationModel";
@@ -42,6 +42,8 @@ const MessagesFeature: React.FC = () => {
     handleScroll,
     getMessagesForConversation,
     initialMessagesLoaded,
+    unreadMessages,
+    markConversationAsRead,
   } = useMessagesViewModel();
 
   const [isMobile, setIsMobile] = useState(false);
@@ -100,9 +102,11 @@ const MessagesFeature: React.FC = () => {
     setTimeout(() => {
       if (conversation.id) {
         fetchMessages(conversation.id);
+        // Mark messages as read when conversation is selected
+        markConversationAsRead(conversation.id);
       }
     }, 200);
-  }, [currentConversation?.id, fetchMessages, setCurrentConversation]);
+  }, [currentConversation?.id, fetchMessages, setCurrentConversation, markConversationAsRead]);
 
   // Back button for mobile view
   const handleBackToConversations = () => {
@@ -190,40 +194,66 @@ const MessagesFeature: React.FC = () => {
                   <List
                     dataSource={filteredConversations}
                     renderItem={(item) => {
-                      // Lấy tin nhắn của cuộc trò chuyện từ WebSocket context
+                      // Get conversation messages from WebSocket context
                       const conversationMessages = getMessagesForConversation(item.id || '');
                       
-                      // Lọc bỏ các tin nhắn phân cách ngày (nếu có)
+                      // Filter out date separator messages (if any)
                       const actualMessages = conversationMessages.filter(msg => !msg.isDateSeparator);
                       
-                      // Lấy tin nhắn mới nhất (phần tử cuối trong mảng đã sắp xếp theo thời gian)
+                      // Get the most recent message (last element in time-sorted array)
                       const lastMessage = actualMessages.length > 0 
                         ? actualMessages.sort((a, b) => 
                             new Date(b.created_at || "").getTime() - new Date(a.created_at || "").getTime()
                           )[0]
                         : null;
                       
-                      // Hiển thị tin nhắn cuối hoặc thông báo mặc định
+                      // Format message preview (truncate if needed)
                       const messagePreview = lastMessage?.content 
                         ? (lastMessage.content.length > 50 ? lastMessage.content.substring(0, 47) + '...' : lastMessage.content)
                         : (localStrings.Messages?.StartConversation || "Start chatting");
                       
-                      // Định dạng tên người gửi nếu có
+                      // Format sender name
                       const senderName = lastMessage?.user_id === user?.id 
                         ? (localStrings.Messages?.You || "You") 
                         : lastMessage?.user 
                           ? `${lastMessage.user.family_name || ''} ${lastMessage.user.name || ''}`.trim()
                           : '';
                       
-                      // Hiển thị tin nhắn cuối với tên người gửi
+                      // Display message with sender name
                       const messageDisplay = lastMessage 
                         ? (senderName ? `${senderName}: ${messagePreview}` : messagePreview)
                         : messagePreview;
                       
-                      // Định dạng thời gian tin nhắn cuối cùng
+                      // Format time of last message
                       const lastMessageTime = lastMessage?.created_at
                         ? formatMessageTime(lastMessage.created_at)
                         : '';
+                        
+                      // Check if this conversation has unread messages
+                      // We consider a conversation unread if it's not the current active conversation
+                      // and has recent messages that the user hasn't seen yet
+                      const hasUnreadMessages = currentConversation?.id !== item.id && 
+                        unreadMessages[item.id || ''] > 0;
+                        
+                      // Check if this is a 1-on-1 conversation
+                      const isOneOnOneChat = item.name?.includes(" & ") || 
+                                           (actualMessages.some(msg => msg.user_id !== user?.id) && 
+                                            new Set(actualMessages.map(msg => msg.user_id)).size <= 2);
+                      
+                      // Find the other user in 1-on-1 chats to get their avatar
+                      const otherUser = isOneOnOneChat && actualMessages.length > 0
+                        ? actualMessages.find(msg => msg.user_id !== user?.id)?.user 
+                        : null;
+                      
+                      // Use friend's avatar for 1-on-1 chats, or conversation image for group chats
+                      const avatarUrl = isOneOnOneChat && otherUser?.avatar_url 
+                        ? otherUser.avatar_url 
+                        : item.image;
+                      
+                      // Get the initial letter for avatar fallback
+                      const avatarInitial = isOneOnOneChat && otherUser?.name 
+                        ? otherUser.name.charAt(0).toUpperCase() 
+                        : item.name?.charAt(0).toUpperCase();
                         
                       return (
                         <List.Item 
@@ -232,25 +262,34 @@ const MessagesFeature: React.FC = () => {
                             cursor: "pointer", 
                             padding: "12px 16px",
                             background: currentConversation?.id === item.id ? lightGray : "transparent",
-                            transition: "background 0.3s"
+                            transition: "background 0.3s",
+                            // Add subtle highlight for unread conversations
+                            borderLeft: hasUnreadMessages ? `3px solid ${brandPrimary}` : "none"
                           }}
                           key={item.id}
                         >
                           <List.Item.Meta
                             avatar={
                               <Avatar 
-                                src={item.image} 
+                                src={avatarUrl} 
                                 size={48}
                                 style={{ 
-                                  backgroundColor: !item.image ? brandPrimary : undefined 
+                                  backgroundColor: !avatarUrl ? brandPrimary : undefined 
                                 }}
                               >
-                                {!item.image && item.name?.charAt(0).toUpperCase()}
+                                {!avatarUrl && avatarInitial}
                               </Avatar>
                             }
                             title={<Text strong>{item.name}</Text>}
                             description={
-                              <Text type="secondary" ellipsis style={{ maxWidth: '100%' }}>
+                              <Text 
+                                type="secondary" 
+                                ellipsis 
+                                style={{ 
+                                  maxWidth: '100%',
+                                  fontWeight: hasUnreadMessages ? 'bold' : 'normal'
+                                }}
+                              >
                                 {messageDisplay}
                               </Text>
                             }
@@ -260,6 +299,13 @@ const MessagesFeature: React.FC = () => {
                               <Text type="secondary" style={{ fontSize: '12px' }}>
                                 {lastMessageTime}
                               </Text>
+                              {hasUnreadMessages && (
+                                <Badge 
+                                  count={unreadMessages[item.id || '']} 
+                                  size="small" 
+                                  style={{ marginTop: 4 }}
+                                />
+                              )}
                             </div>
                           )}
                         </List.Item>
@@ -300,15 +346,44 @@ const MessagesFeature: React.FC = () => {
             )}
             {currentConversation ? (
               <>
-                <Avatar 
-                  src={currentConversation.image} 
-                  size={40}
-                  style={{ 
-                    backgroundColor: !currentConversation.image ? brandPrimary : undefined 
-                  }}
-                >
-                  {!currentConversation.image && currentConversation.name?.charAt(0).toUpperCase()}
-                </Avatar>
+                {/* For the header, we also want to show the friend's avatar for 1-on-1 chats */}
+                {(() => {
+                  // Get conversation messages
+                  const conversationMessages = getMessagesForConversation(currentConversation.id || '');
+                  const actualMessages = conversationMessages.filter(msg => !msg.isDateSeparator);
+                  
+                  // Check if this is a 1-on-1 conversation
+                  const isOneOnOneChat = currentConversation.name?.includes(" & ") || 
+                    (actualMessages.some(msg => msg.user_id !== user?.id) && 
+                    new Set(actualMessages.map(msg => msg.user_id)).size <= 2);
+                  
+                  // Find the other user in 1-on-1 chats to get their avatar
+                  const otherUser = isOneOnOneChat && actualMessages.length > 0
+                    ? actualMessages.find(msg => msg.user_id !== user?.id)?.user 
+                    : null;
+                  
+                  // Use friend's avatar for 1-on-1 chats
+                  const avatarUrl = isOneOnOneChat && otherUser?.avatar_url 
+                    ? otherUser.avatar_url 
+                    : currentConversation.image;
+                  
+                  // Get the initial letter for avatar fallback
+                  const avatarInitial = isOneOnOneChat && otherUser?.name 
+                    ? otherUser.name.charAt(0).toUpperCase() 
+                    : currentConversation.name?.charAt(0).toUpperCase();
+                  
+                  return (
+                    <Avatar 
+                      src={avatarUrl} 
+                      size={40}
+                      style={{ 
+                        backgroundColor: !avatarUrl ? brandPrimary : undefined 
+                      }}
+                    >
+                      {!avatarUrl && avatarInitial}
+                    </Avatar>
+                  );
+                })()}
                 <div style={{ marginLeft: 12 }}>
                   <Text strong style={{ fontSize: 16 }}>
                     {currentConversation.name}

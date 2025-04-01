@@ -67,6 +67,7 @@ export const VnLocalizedStrings = {
     SuggestedFriend: "Những người bạn có thể biết",
     LoadMore: "Tải thêm",
     Search: "Tìm kiếm",
+    Error: "Lỗi",
   },
   Form: {
     Label: {

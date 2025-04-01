@@ -25,7 +25,9 @@ export const useMessagesViewModel = () => {
     updateMessagesForConversation,
     conversations: wsConversations,
     updateConversations,
-    addMessageListener
+    addMessageListener,
+    unreadMessages,
+    resetUnreadCount 
   } = useWebSocket();
 
   // State for UI
@@ -546,7 +548,7 @@ const fetchConversations = async () => {
         )
       );
       
-      message.error(localStrings.Public?.Error || "Failed to send message");
+      message.error(localStrings.Public.Error || "Failed to send message");
     }
   };
 
@@ -562,7 +564,7 @@ const fetchConversations = async () => {
       await defaultMessagesRepo.deleteMessage({ message_id: messageId });
     } catch (error) {
       console.error("Error deleting message:", error);
-      message.error(localStrings.Public?.Error || "Error deleting message");
+      message.error(localStrings.Public.Error || "Error deleting message");
       
       // Fetch messages again to reset state
       if (currentConversation.id) {
@@ -611,7 +613,7 @@ const fetchConversations = async () => {
       return null;
     } catch (error) {
       console.error("Error updating conversation:", error);
-      message.error(localStrings.Public?.Error || "Error updating conversation");
+      message.error(localStrings.Public.Error || "Error updating conversation");
       return null;
     }
   };
@@ -621,11 +623,15 @@ const fetchConversations = async () => {
     if (!user?.id || !conversationId) return;
     
     try {
-      // Call the API to update conversation detail status (mark as read)
+      // 1. Call the API to update conversation detail status (mark as read)
       await defaultMessagesRepo.updateConversationDetail({
         conversation_id: conversationId,
         user_id: user.id
       });
+      
+      // 2. Reset unread counter in WebSocket context
+      resetUnreadCount(conversationId);
+      
     } catch (error) {
       console.error("Error marking conversation as read:", error);
     }
@@ -651,6 +657,7 @@ const fetchConversations = async () => {
     isWebSocketConnected,
     messageListRef,
     initialMessagesLoaded,
+    unreadMessages, // Expose unread messages from WebSocket context
     
     // Setters
     setSearchText,
@@ -663,7 +670,7 @@ const fetchConversations = async () => {
         markConversationAsRead(conversation.id);
       }
     },
-
+  
     getMessagesForConversation: (conversationId: string) => {
       return getMessagesForConversation(conversationId);
     },
@@ -675,8 +682,8 @@ const fetchConversations = async () => {
     deleteMessage,
     createConversation,
     updateConversation,
-    markConversationAsRead,
+    markConversationAsRead, 
     loadMoreMessages,
-    handleScroll
+    handleScroll,
   };
 };

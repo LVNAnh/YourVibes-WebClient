@@ -106,16 +106,6 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, onDelete }) => {
               alignItems: "center",
               justifyContent: "flex-end"
             }}>
-              {message.fromServer && (
-                <span style={{ 
-                  width: 6, 
-                  height: 6, 
-                  borderRadius: "50%", 
-                  backgroundColor: "#4CAF50",
-                  display: "inline-block",
-                  marginRight: 4
-                }} />
-              )}
               {formatMessageTime(message.created_at || '')}
             </span>
           )}

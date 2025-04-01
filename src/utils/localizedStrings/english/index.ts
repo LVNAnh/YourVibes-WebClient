@@ -69,6 +69,7 @@ export const ENGLocalizedStrings = {
     SuggestedFriends: "Suggested Friends",
     LoadMore: "Load more",
     Search: "Search",
+    Error: "Error",
   },
   Form: {
     Label: {

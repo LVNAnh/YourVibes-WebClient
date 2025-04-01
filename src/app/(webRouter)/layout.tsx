@@ -62,40 +62,9 @@ export default function Layout({ children }: { children: React.ReactNode }): Rea
   //   };
   // };
 
-//   const fetchData = async () => {
-//     const token = document.cookie.replace(/(?:(?:^|.*;\s*)accesstoken\s*=\s*([^;]*).*$)|^.*$/, "$1");
-
-//     const response = await fetch(`
-// https://yourvibes.duckdns.org:8080/v1/2024/users/${user?.id}`, {
-//       method: 'GET',
-//       headers: {
-//         'Authorization': `Bearer ${token}`,
-//       },
-//     });
-
-//     // Nếu nhận được lỗi 401 hoặc 403, điều hướng về trang login
-//     if (response.status === 401 || response.status === 403) {
-//       window.location.href = '/login';
-//       message.error(localStrings.Public.LoginStatus);
-//     } else {
-//       const data = await response.json();
-//       // Xử lý dữ liệu nếu không có lỗi
-//     }
-//   };
-
-  // useEffect(() => {
-  //   if (user?.id) {
-  //     const closeWebSocket = connectWebSocket();
-  //     { }
-  //     return () => {
-  //       closeWebSocket();
-  //     };
-  //   }
-  // }, [user]);
-
   return (
     <Suspense fallback={<Skeleton paragraph={{ rows: 10 }} active />}>
-      <div className="mb-10">
+      <div className="overflow-hidden">
         <MainLayout>{children}</MainLayout>
       </div>
     </Suspense>
