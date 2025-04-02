@@ -77,7 +77,6 @@ export class MessagesRepo implements IMessagesRepo {
     return client.delete(`${ApiPath.DELETE_CONVERSATION}${data.conversation_id}`);
   }
 
-  // New method for updating a conversation
   async updateConversation(
     data: UpdateConversationRequestModel
   ): Promise<BaseApiResponseModel<ConversationResponseModel>> {
@@ -112,11 +111,9 @@ export class MessagesRepo implements IMessagesRepo {
     return client.delete(`${ApiPath.DELETE_CONVERSATION_DETAIL}${data.user_id}/${data.conversation_id}`);
   }
 
-  // New method for updating conversation detail status
   async updateConversationDetail(
     data: UpdateConversationDetail
   ): Promise<BaseApiResponseModel<ConversationDetailResponseModel>> {
-    // According to Swagger, this endpoint updates conversationDetail status to false
     return client.patch(ApiPath.UPDATE_CONVERSATION_DETAIL, {
       conversation_id: data.conversation_id,
       user_id: data.user_id

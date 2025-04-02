@@ -68,6 +68,9 @@ export const VnLocalizedStrings = {
     LoadMore: "Tải thêm",
     Search: "Tìm kiếm",
     Error: "Lỗi",
+    Yes: "Có",
+    No: "Không",
+    Delete: "Xóa",
   },
   Form: {
     Label: {
@@ -383,6 +386,7 @@ Messages: {
   SelectConversation: "Chọn cuộc trò chuyện",
   SelectConversationToChat: "Chọn cuộc trò chuyện để chat",
   TypeMessage: "Nhập tin nhắn",
-  ErrorFetchingConversations: "Lỗi không lấy được cuộc trò chuyện"
+  ErrorFetchingConversations: "Lỗi không lấy được cuộc trò chuyện",
+  ConfirmDeleteMessage: "Xác nhận xóa tin nhắn này ?",
 }
 };

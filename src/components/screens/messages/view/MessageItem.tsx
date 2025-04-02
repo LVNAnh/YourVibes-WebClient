@@ -19,27 +19,24 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, onDelete }) => {
   
   const isMyMessage = message.user_id === user?.id;
   
-  // Format timestamp to readable time
   const formatMessageTime = (timestamp: string) => {
     if (!timestamp) return "";
     const date = new Date(timestamp);
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
   
-  // Handle message delete
   const handleDelete = () => {
     if (message.id) {
       onDelete(message.id);
     }
   };
   
-  // Menu items for message options
   const menuItems = [
     {
       key: "delete",
       label: (
         <Popconfirm
-          title={localStrings.Public.ConfirmDeleteMessage || "Delete this message?"}
+          title={localStrings.Messages.ConfirmDeleteMessage || "Delete this message?"}
           onConfirm={handleDelete}
           okText={localStrings.Public.Yes || "Yes"}
           cancelText={localStrings.Public.No || "No"}

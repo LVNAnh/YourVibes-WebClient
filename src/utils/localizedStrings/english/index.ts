@@ -70,6 +70,9 @@ export const ENGLocalizedStrings = {
     LoadMore: "Load more",
     Search: "Search",
     Error: "Error",
+    Yes: "Yes",
+    No: "No",
+    Delete: "Delete",
   },
   Form: {
     Label: {
@@ -386,5 +389,6 @@ export const ENGLocalizedStrings = {
     SelectConversationToChat: "Select Conversation To Chat",
     TypeMessage: "Type a message",
     ErrorFetchingConversations:"Error fetching conversation",
+    ConfirmDeleteMessage: "Confirm delete this message ?",
   }
 };
