@@ -11,6 +11,7 @@ import { MessageResponseModel } from "@/api/features/messages/models/MessageMode
 import NewConversationModal from "./NewConversationModal";
 import MessageItem from "./MessageItem";
 import DateSeparator from "./DateSeparator";
+import EditConversationModal from "./EditConversationModal";
 import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react';
 
 const { Header, Content, Sider } = Layout;
@@ -24,6 +25,7 @@ const MessagesFeature: React.FC = () => {
   const {
     deleteMessage,
     createConversation,
+    updateConversation,
     deleteConversation,
     conversations,
     currentConversation,
@@ -51,6 +53,7 @@ const MessagesFeature: React.FC = () => {
   const [isMobile, setIsMobile] = useState(false);
   const [showConversation, setShowConversation] = useState(true);
   const { backgroundColor, lightGray, brandPrimary } = useColor();
+  const [editConversationModalVisible, setEditConversationModalVisible] = useState(false);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -117,6 +120,18 @@ const MessagesFeature: React.FC = () => {
   );
 
   const [newConversationModalVisible, setNewConversationModalVisible] = useState(false);
+
+  const handleUpdateConversation = async (name: string, image?: File | string) => {
+    if (currentConversation?.id) {
+      try {
+        await updateConversation(currentConversation.id, name, image as string);
+        message.success(localStrings.Messages.ConversationUpdated || "Conversation updated successfully");
+        setEditConversationModalVisible(false);
+      } catch (error) {
+        message.error(localStrings.Public.Error || "An error occurred");
+      }
+    }
+  };
 
   const handleDeleteConversation = async (conversationId: string) => {
     Modal.confirm({
@@ -233,16 +248,18 @@ const MessagesFeature: React.FC = () => {
                         unreadMessages[item.id || ''] > 0;
                         
                       const isOneOnOneChat = item.name?.includes(" & ") || 
-                                           (actualMessages.some(msg => msg.user_id !== user?.id) && 
-                                            new Set(actualMessages.map(msg => msg.user_id)).size <= 2);
+                        (actualMessages.some(msg => msg.user_id !== user?.id) && 
+                        new Set(actualMessages.map(msg => msg.user_id)).size <= 2);
                       
                       const otherUser = isOneOnOneChat && actualMessages.length > 0
                         ? actualMessages.find(msg => msg.user_id !== user?.id)?.user 
                         : null;
                       
-                      const avatarUrl = isOneOnOneChat && otherUser?.avatar_url 
-                        ? otherUser.avatar_url 
-                        : item.image;
+                      let avatarUrl = item.image; 
+
+                      if (isOneOnOneChat && !item.image && otherUser?.avatar_url) {
+                        avatarUrl = otherUser.avatar_url;
+                      }
                       
                       const avatarInitial = isOneOnOneChat && otherUser?.name 
                         ? otherUser.name.charAt(0).toUpperCase() 
@@ -351,9 +368,11 @@ const MessagesFeature: React.FC = () => {
                     ? actualMessages.find(msg => msg.user_id !== user?.id)?.user 
                     : null;
                   
-                  const avatarUrl = isOneOnOneChat && otherUser?.avatar_url 
-                    ? otherUser.avatar_url 
-                    : currentConversation.image;
+                  let avatarUrl = currentConversation.image; 
+                  
+                  if (isOneOnOneChat && !currentConversation.image && otherUser?.avatar_url) {
+                    avatarUrl = otherUser.avatar_url;
+                  }
                   
                   const avatarInitial = isOneOnOneChat && otherUser?.name 
                     ? otherUser.name.charAt(0).toUpperCase() 
@@ -381,6 +400,12 @@ const MessagesFeature: React.FC = () => {
                     overlay={
                       <Menu>
                         {/* Chỉ hiển thị xóa cuộc trò chuyện nếu là nhóm chat */}
+                        <Item 
+                          key="edit" 
+                          onClick={() => setEditConversationModalVisible(true)}
+                        >
+                          {localStrings.Messages.EditConversation || "Edit Conversation Info"}
+                        </Item>
                         {conversations.find(c => c.id === currentConversation.id)?.user_id !== user?.id && (
                           <Item 
                             key="delete" 
@@ -556,6 +581,14 @@ const MessagesFeature: React.FC = () => {
         visible={newConversationModalVisible}
         onCancel={() => setNewConversationModalVisible(false)}
         onCreateConversation={createConversation}
+      />
+
+      {/* Edit Conversation Modal */}
+      <EditConversationModal 
+        visible={editConversationModalVisible}
+        onCancel={() => setEditConversationModalVisible(false)}
+        onUpdateConversation={handleUpdateConversation}
+        currentConversation={currentConversation}
       />
     </Layout>
   );

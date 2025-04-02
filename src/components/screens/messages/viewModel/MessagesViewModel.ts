@@ -169,63 +169,85 @@ export const useMessagesViewModel = () => {
     return processedMessages;
   };
 
-const fetchConversations = async () => {
-  if (!user?.id) return;
-  
-  setConversationsLoading(true);
-  try {
-    const response = await defaultMessagesRepo.getConversations({
-      limit: 50,
-      page: 1
-    });
+  const fetchConversations = async () => {
+    if (!user?.id) return;
     
-    if (response.data) {
-      const conversationsList = Array.isArray(response.data) 
-        ? response.data 
-        : [response.data];
-      setConversations(conversationsList);
-      
-      updateConversations(conversationsList);
-      
-      const fetchMessagesPromises = conversationsList.map(async (conversation) => {
-        if (conversation.id) {
-          try {
-            const messageResponse = await defaultMessagesRepo.getMessagesByConversationId({
-              conversation_id: conversation.id,
-              sort_by: "created_at",
-              is_descending: true,
-              limit: 1,
-              page: 1
-            });
-            
-            if (messageResponse.data) {
-              const messageList = Array.isArray(messageResponse.data) 
-                ? messageResponse.data 
-                : [messageResponse.data];
-              
-              if (messageList.length > 0) {
-                const formattedMessages = messageList.map(msg => ({
-                  ...msg,
-                  fromServer: true,
-                  isTemporary: false
-                }));
-                
-                updateMessagesForConversation(conversation.id, formattedMessages);
-              }
-            }
-          } catch (error) {
-          }
-        }
+    setConversationsLoading(true);
+    try {
+      const response = await defaultMessagesRepo.getConversations({
+        limit: 50,
+        page: 1
       });
       
-      await Promise.all(fetchMessagesPromises);
+      if (response.data) {
+        const conversationsList = Array.isArray(response.data) 
+          ? response.data 
+          : [response.data];
+        
+        setConversations(conversationsList);
+        updateConversations(conversationsList);
+        
+        const lastMessagesMap = new Map();
+        
+        const fetchMessagesPromises = conversationsList.map(async (conversation) => {
+          if (conversation.id) {
+            try {
+              const messageResponse = await defaultMessagesRepo.getMessagesByConversationId({
+                conversation_id: conversation.id,
+                sort_by: "created_at",
+                is_descending: true,
+                limit: 1,
+                page: 1
+              });
+              
+              if (messageResponse.data) {
+                const messageList = Array.isArray(messageResponse.data) 
+                  ? messageResponse.data 
+                  : [messageResponse.data];
+                
+                if (messageList.length > 0) {
+                  const formattedMessages = messageList.map(msg => ({
+                    ...msg,
+                    fromServer: true,
+                    isTemporary: false
+                  }));
+                  
+                  updateMessagesForConversation(conversation.id, formattedMessages);
+                  
+                  lastMessagesMap.set(conversation.id, formattedMessages[0]);
+                }
+              }
+            } catch (error) {
+              console.error("Error fetching messages for conversation", conversation.id, error);
+            }
+          }
+        });
+        
+        await Promise.all(fetchMessagesPromises);
+        
+        const sortedConversations = [...conversationsList].sort((a, b) => {
+          const lastMessageA = lastMessagesMap.get(a.id);
+          const lastMessageB = lastMessagesMap.get(b.id);
+          
+          if (!lastMessageA && !lastMessageB) return 0;
+          if (!lastMessageA) return 1;
+          if (!lastMessageB) return -1;
+          
+          const timeA = new Date(lastMessageA.created_at || '').getTime();
+          const timeB = new Date(lastMessageB.created_at || '').getTime();
+          
+          return timeB - timeA;
+        });
+        
+        setConversations(sortedConversations);
+        updateConversations(sortedConversations);
+      }
+    } catch (error) {
+      message.error(localStrings.Messages?.ErrorFetchingConversations || "Error fetching conversations");
+    } finally {
+      setConversationsLoading(false);
     }
-  } catch (error) {
-    message.error(localStrings.Messages?.ErrorFetchingConversations || "Error fetching conversations");
-  } finally {
-    setConversationsLoading(false);
-  }
-};
+  };
 
   const fetchMessages = async (conversationId: string, page: number = 1, shouldAppend: boolean = false) => {
     if (!user?.id || !conversationId) return;
@@ -346,7 +368,7 @@ const fetchConversations = async () => {
     try {
       const createResponse = await defaultMessagesRepo.createConversation({
         name: name,
-        image: image,
+        image: image, 
         user_ids: userIds && userIds.length > 0 ? userIds : [user.id]
       });
       
@@ -448,7 +470,7 @@ const fetchConversations = async () => {
     }
   };
 
-  const updateConversation = async (conversationId: string, name?: string, image?: string) => {
+  const updateConversation = async (conversationId: string, name?: string, image?: File | string) => {
     if (!conversationId) return null;
     
     try {
@@ -465,25 +487,20 @@ const fetchConversations = async () => {
         setConversations(prev => 
           prev.map(conv => 
             conv.id === conversationId 
-              ? { ...conv, name: name || conv.name, image: image || conv.image }
+              ? response.data as ConversationResponseModel
               : conv
           )
         );
         
         if (currentConversation?.id === conversationId) {
-          setCurrentConversation(prev => 
-            prev ? { 
-              ...prev, 
-              name: name || prev.name, 
-              image: image || prev.image 
-            } : prev
-          );
+          setCurrentConversation(response.data as ConversationResponseModel);
         }
         
         return response.data;
       }
       return null;
     } catch (error) {
+      console.error("Error updating conversation:", error);
       message.error(localStrings.Public.Error || "Error updating conversation");
       return null;
     }

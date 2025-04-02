@@ -72,6 +72,11 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
   const handleImageUpload = (info: any) => {
     const file = info.file;
     
+    if (!file) {
+      console.error("Không tìm thấy file:", info);
+      return false;
+    }
+    
     const isImage = file.type.startsWith('image/');
     const isLt5M = file.size / 1024 / 1024 < 5;
     
@@ -85,9 +90,11 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
       return false;
     }
     
+    
     const reader = new FileReader();
     reader.onloadend = () => {
-      setImagePreview(reader.result as string);
+      const previewUrl = reader.result as string;
+      setImagePreview(previewUrl);
     };
     reader.readAsDataURL(file);
     
@@ -194,18 +201,30 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
             name="avatar"
             multiple={false}
             showUploadList={false}
-            beforeUpload={handleImageUpload}
+            beforeUpload={() => false} // Ngăn chặn upload tự động
+            onChange={(info) => {
+              // Xử lý file khi người dùng chọn
+              handleImageUpload(info);
+            }}
             accept="image/*"
           >
             {imagePreview ? (
-              <div style={{ position: 'relative' }}>
+              <div style={{ 
+                position: 'relative',
+                width: '100%',
+                height: '200px',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                overflow: 'hidden'
+              }}>
                 <img 
                   src={imagePreview} 
                   alt="Conversation" 
                   style={{ 
-                    width: '100%', 
+                    maxWidth: '100%', 
                     maxHeight: '200px', 
-                    objectFit: 'cover' 
+                    objectFit: 'contain' 
                   }} 
                 />
                 <Button 
@@ -216,12 +235,13 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
                   }}
                   style={{ 
                     position: 'absolute', 
-                    top: 0, 
-                    right: 0, 
-                    zIndex: 1 
+                    top: 5, 
+                    right: 5, 
+                    zIndex: 10,
+                    background: 'rgba(255, 255, 255, 0.7)'
                   }}
                 >
-                  Remove
+                  {localStrings.Messages.Remove || "Remove"}
                 </Button>
               </div>
             ) : (

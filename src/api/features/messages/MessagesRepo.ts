@@ -69,7 +69,11 @@ export class MessagesRepo implements IMessagesRepo {
     }
     
     if (data.image) {
-      formData.append('image', data.image);
+      if (typeof data.image === 'string') {
+        formData.append('image', data.image);
+      } else {
+        formData.append('image', data.image);
+      }
     }
     
     if (data.user_ids && data.user_ids.length > 0) {
@@ -104,9 +108,39 @@ export class MessagesRepo implements IMessagesRepo {
   async updateConversation(
     data: UpdateConversationRequestModel
   ): Promise<BaseApiResponseModel<ConversationResponseModel>> {
-    return client.patch(`${ApiPath.UPDATE_CONVERSATION}${data.conversation_id}`, {
-      name: data.name,
-      image: data.image
+    // Tạo FormData để gửi multipart/form-data
+    const formData = new FormData();
+    
+    if (data.name) {
+      formData.append('name', data.name);
+    }
+    
+    if (data.image) {
+      if (data.image instanceof File) {
+        formData.append('image', data.image);
+      } else if (typeof data.image === 'string' && data.image.startsWith('data:')) {
+        try {
+          const response = await fetch(data.image);
+          const blob = await response.blob();
+          const file = new File([blob], 'image.jpg', { type: 'image/jpeg' });
+          formData.append('image', file);
+        } catch (error) {
+          console.error('Error converting base64 to file:', error);
+        }
+      } else if (typeof data.image === 'string') {
+        try {
+          const response = await fetch(data.image);
+          const blob = await response.blob();
+          const file = new File([blob], 'image.jpg', { type: 'image/jpeg' });
+          formData.append('image', file);
+        } catch (error) {
+          console.error('Error converting URL to file:', error);
+        }
+      }
+    }
+    
+    return client.patch(`${ApiPath.UPDATE_CONVERSATION}${data.conversation_id}`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
     });
   }
 

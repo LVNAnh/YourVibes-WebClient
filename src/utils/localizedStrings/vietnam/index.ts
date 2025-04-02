@@ -405,5 +405,11 @@ Messages: {
   SupportSingleImageUpload: "Chỉ hỗ trợ tải lên một ảnh",  
   SelectFriends: "Chọn bạn bè",  
   NoFriendsFound: "Không tìm thấy bạn bè",  
+  Remove: "Xóa",
+  EditConversation: "Chỉnh sửa cuộc trò chuyện",  
+  Update: "Cập nhật",  
+  ConversationNameRequired: "Tên cuộc trò chuyện là bắt buộc",  
+  GroupName: "Tên nhóm",  
+  ConversationUpdated: "Cuộc trò chuyện đã được cập nhật",  
 }
 };

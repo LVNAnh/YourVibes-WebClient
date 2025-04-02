@@ -24,7 +24,7 @@ export interface DeleteConversationByIDRequestModel {
 export interface UpdateConversationRequestModel {
     conversation_id?: string,
     name?: string,
-    image?: string,
+    image?: string | File, 
 }
 
 export interface ConversationResponseModel {

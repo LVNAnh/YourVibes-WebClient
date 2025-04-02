@@ -407,6 +407,12 @@ export const ENGLocalizedStrings = {
     SupportSingleImageUpload: "Support for a single image",
     SelectFriends: "Select Friends",
     NoFriendsFound: "No Friends Found",
+    Remove: "Remove",
+    EditConversation: "Edit Conversation",
+    Update: "Update",
+    ConversationNameRequired: "Conversation Name Required",
+    GroupName: "Group Name",
+    ConversationUpdated: "Conversation Updated",
 
   }
 };
