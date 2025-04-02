@@ -206,7 +206,7 @@ export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
       };
     });
     
-    if (currentConversationId !== conversationId) {
+    if (currentConversationId !== conversationId && message.user_id !== user?.id) {
       setUnreadMessages(prev => ({
         ...prev,
         [conversationId]: (prev[conversationId] || 0) + 1
