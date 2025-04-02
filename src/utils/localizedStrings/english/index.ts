@@ -390,5 +390,23 @@ export const ENGLocalizedStrings = {
     TypeMessage: "Type a message",
     ErrorFetchingConversations:"Error fetching conversation",
     ConfirmDeleteMessage: "Confirm delete this message ?",
+    ConfirmDeleteConversation: "Confirm delete this conversation ?",
+    ConversationDeleted: "Conversation was deleted successfully!",
+    DeleteConversation: "Delete Conversation",
+    LeaveConversation: "Leave Conversation",
+    ErrorFetchingFriends: "Error fetching friends",
+    OnlyImageFiles: "Only Image Files",
+    ImageMustSmallerThan5M: "Image Must Smaller 5MB",
+    SelectAtLeastOneFriend: "Select At Least One Friend",
+    NewConversation: "New Conversation",
+    Create: "Create",
+    ConversationName: "Conversation Name",
+    OptionalGroupName: "Optinal Group Name",
+    ConversationImage: "Conversation Image",
+    ClickOrDragImageToUpload: "Click or Drag Image To Upload",
+    SupportSingleImageUpload: "Support for a single image",
+    SelectFriends: "Select Friends",
+    NoFriendsFound: "No Friends Found",
+
   }
 };

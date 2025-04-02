@@ -1,7 +1,7 @@
 export interface CreateConversationRequestModel {
     name?: string,
-    image?: string,
-    user_ids?: string[],
+    image?: File | string, 
+    user_ids: string[],
 }
 
 export interface GetCoversationRequestModel {

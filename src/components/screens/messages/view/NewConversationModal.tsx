@@ -1,17 +1,20 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Modal, Form, Input, Button, List, Avatar, Spin, message, Checkbox } from "antd";
+import { Modal, Form, Input, Button, List, Avatar, Spin, message, Checkbox, Upload } from "antd";
 import { useAuth } from "@/context/auth/useAuth";
 import { defaultProfileRepo } from "@/api/features/profile/ProfileRepository";
 import { FriendResponseModel } from "@/api/features/profile/model/FriendReponseModel";
 import useColor from "@/hooks/useColor";
 import { defaultMessagesRepo } from "@/api/features/messages/MessagesRepo";
+import { InboxOutlined } from "@ant-design/icons";
+
+const { Dragger } = Upload;
 
 interface NewConversationModalProps {
   visible: boolean;
   onCancel: () => void;
-  onCreateConversation: (name: string, image?: string) => Promise<any>;
+  onCreateConversation: (name: string, image?: File | string, userIds?: string[]) => Promise<any>;
 }
 
 const NewConversationModal: React.FC<NewConversationModalProps> = ({ 
@@ -26,15 +29,24 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
+  const [conversationImage, setConversationImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
 
-  // Fetch user's friends when modal is opened
   useEffect(() => {
     if (visible && user?.id) {
       fetchFriends();
     }
   }, [visible, user?.id]);
 
-  // Fetch friends list
+  useEffect(() => {
+    if (visible) {
+      form.resetFields();
+      setSelectedFriends([]);
+      setConversationImage(null);
+      setImagePreview(null);
+    }
+  }, [visible]);
+
   const fetchFriends = async () => {
     if (!user?.id) return;
     
@@ -51,31 +63,59 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
       }
     } catch (error) {
       console.error("Error fetching friends:", error);
-      message.error(localStrings.Public.ErrorFetchingFriends);
+      message.error(localStrings.Messages.ErrorFetchingFriends);
     } finally {
       setLoading(false);
     }
   };
 
-  // Create new conversation with selected friends
+  const handleImageUpload = (info: any) => {
+    const file = info.file;
+    
+    const isImage = file.type.startsWith('image/');
+    const isLt5M = file.size / 1024 / 1024 < 5;
+    
+    if (!isImage) {
+      message.error(localStrings.Messages.OnlyImageFiles || 'You can only upload image files!');
+      return false;
+    }
+    
+    if (!isLt5M) {
+      message.error(localStrings.Messages.ImageMustSmallerThan5M || 'Image must smaller than 5MB!');
+      return false;
+    }
+    
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setImagePreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+    
+    setConversationImage(file);
+    return false; 
+  };
+
+  const removeImage = () => {
+    setConversationImage(null);
+    setImagePreview(null);
+  };
+
   const handleCreateConversation = async () => {
     try {
       await form.validateFields();
       const values = form.getFieldsValue();
       
       if (selectedFriends.length === 0) {
-        message.warning(localStrings.Public.SelectAtLeastOneFriend);
+        message.warning(localStrings.Messages.SelectAtLeastOneFriend);
         return;
       }
       
       setCreating(true);
       
-      // Get selected friends
       const selectedUsers = selectedFriends.map(id => 
         friends.find(friend => friend.id === id)
       ).filter(Boolean) as FriendResponseModel[];
       
-      // Create conversation name based on selected friends if not provided
       let conversationName = values.name;
       if (!conversationName && selectedUsers.length > 0) {
         conversationName = selectedUsers
@@ -83,30 +123,23 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
           .join(", ");
       }
       
-      // Create conversation
-      const newConversation = await onCreateConversation(conversationName);
+      const userIdsToAdd = [
+        ...(user?.id ? [user.id] : []), 
+        ...selectedFriends
+      ];
+      
+      const newConversation = await onCreateConversation(
+        conversationName, 
+        conversationImage || undefined, 
+        userIdsToAdd
+      );
       
       if (newConversation && newConversation.id) {
-        // Add selected friends to the conversation
-        for (const friendId of selectedFriends) {
-          try {
-            await defaultMessagesRepo.createConversationDetail({
-              conversation_id: newConversation.id,
-              user_id: friendId
-            });
-          } catch (error) {
-            console.error(`Error adding friend ${friendId} to conversation:`, error);
-          }
-        }
-        
-        // Note: Current user is now added to the conversation in the createConversation function
-        // to ensure they always see their own conversations
-        
-        // Reset form
         form.resetFields();
         setSelectedFriends([]);
+        setConversationImage(null);
+        setImagePreview(null);
         
-        // Close modal
         onCancel();
       }
     } catch (error) {
@@ -116,7 +149,6 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
     }
   };
 
-  // Toggle friend selection
   const toggleFriendSelection = (friendId: string) => {
     if (selectedFriends.includes(friendId)) {
       setSelectedFriends(prev => prev.filter(id => id !== friendId));
@@ -128,7 +160,7 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
   return (
     <Modal
       open={visible}
-      title={localStrings.Public.NewConversation || "New Conversation"}
+      title={localStrings.Messages.NewConversation || "New Conversation"}
       onCancel={onCancel}
       footer={[
         <Button key="cancel" onClick={onCancel}>
@@ -141,21 +173,76 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
           loading={creating}
           disabled={selectedFriends.length === 0}
         >
-          {localStrings.Public.Create || "Create"}
+          {localStrings.Messages.Create || "Create"}
         </Button>
       ]}
     >
       <Form form={form} layout="vertical">
         <Form.Item 
           name="name" 
-          label={localStrings.Public.ConversationName || "Conversation Name"}
+          label={localStrings.Messages.ConversationName || "Conversation Name"}
         >
-          <Input placeholder={localStrings.Public.OptionalGroupName || "Optional Group Name"} />
+          <Input placeholder={localStrings.Messages.OptionalGroupName || "Optional Group Name"} />
+        </Form.Item>
+        
+        {/* Image Upload Section */}
+        <Form.Item 
+          name="image" 
+          label={localStrings.Messages.ConversationImage || "Conversation Image"}
+        >
+          <Dragger
+            name="avatar"
+            multiple={false}
+            showUploadList={false}
+            beforeUpload={handleImageUpload}
+            accept="image/*"
+          >
+            {imagePreview ? (
+              <div style={{ position: 'relative' }}>
+                <img 
+                  src={imagePreview} 
+                  alt="Conversation" 
+                  style={{ 
+                    width: '100%', 
+                    maxHeight: '200px', 
+                    objectFit: 'cover' 
+                  }} 
+                />
+                <Button 
+                  type="text" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeImage();
+                  }}
+                  style={{ 
+                    position: 'absolute', 
+                    top: 0, 
+                    right: 0, 
+                    zIndex: 1 
+                  }}
+                >
+                  Remove
+                </Button>
+              </div>
+            ) : (
+              <div>
+                <p className="ant-upload-drag-icon">
+                  <InboxOutlined />
+                </p>
+                <p className="ant-upload-text">
+                  {localStrings.Messages.ClickOrDragImageToUpload || "Click or drag image to upload"}
+                </p>
+                <p className="ant-upload-hint">
+                  {localStrings.Messages.SupportSingleImageUpload || "Support for a single image upload (max 5MB)"}
+                </p>
+              </div>
+            )}
+          </Dragger>
         </Form.Item>
         
         <div style={{ marginBottom: 16 }}>
           <label style={{ display: "block", marginBottom: 8 }}>
-            {localStrings.Public.SelectFriends || "Select Friends"}
+            {localStrings.Public.Messages || "Select Friends"}
           </label>
           
           {loading ? (
@@ -202,7 +289,7 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
                   </div>
                 </List.Item>
               )}
-              locale={{ emptyText: localStrings.Public.NoFriendsFound || "No friends found" }}
+              locale={{ emptyText: localStrings.Messages.NoFriendsFound || "No friends found" }}
             />
           )}
         </div>

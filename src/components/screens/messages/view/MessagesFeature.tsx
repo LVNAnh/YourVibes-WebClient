@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/context/auth/useAuth";
 import { useMessagesViewModel } from "../viewModel/MessagesViewModel";
-import { Avatar, Button, Empty, Input, Layout, List, Skeleton, Spin, Typography, Popover, Badge } from "antd";
+import { Avatar, Button, Empty, Input, Layout, List, Skeleton, Spin, Typography, Popover, Badge, Dropdown, Menu, Modal, message } from "antd";
 import { SendOutlined, EllipsisOutlined, SearchOutlined, ArrowLeftOutlined, PlusOutlined, SmileOutlined } from "@ant-design/icons";
 import useColor from "@/hooks/useColor";
 import { ConversationResponseModel } from "@/api/features/messages/models/ConversationModel";
@@ -16,6 +16,7 @@ import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react';
 const { Header, Content, Sider } = Layout;
 const { Search } = Input;
 const { Text, Title } = Typography;
+const { SubMenu, Item } = Menu;
 
 const MessagesFeature: React.FC = () => {
   const { user, localStrings } = useAuth();
@@ -23,6 +24,7 @@ const MessagesFeature: React.FC = () => {
   const {
     deleteMessage,
     createConversation,
+    deleteConversation,
     conversations,
     currentConversation,
     messages,
@@ -115,6 +117,23 @@ const MessagesFeature: React.FC = () => {
   );
 
   const [newConversationModalVisible, setNewConversationModalVisible] = useState(false);
+
+  const handleDeleteConversation = async (conversationId: string) => {
+    Modal.confirm({
+      title: localStrings.Messages.ConfirmDeleteConversation || 'Delete Conversation',
+      content: localStrings.Messages.ConfirmDeleteConversation || 'Are you sure you want to delete this conversation?',
+      okText: localStrings.Public.Yes || 'Yes',
+      cancelText: localStrings.Public.No || 'No',
+      onOk: async () => {
+        try {
+          await deleteConversation(conversationId);
+          message.success(localStrings.Messages?.ConversationDeleted || 'Conversation deleted successfully');
+        } catch (error) {
+          message.error(localStrings.Public.Error || 'An error occurred');
+        }
+      }
+    });
+  };
 
   return (
     <Layout style={{ height: "calc(100vh - 64px)", background: backgroundColor }}>
@@ -358,10 +377,31 @@ const MessagesFeature: React.FC = () => {
                   </Text>
                 </div>
                 <div style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}>
-                  <Button 
-                    type="text" 
-                    icon={<EllipsisOutlined style={{ fontSize: 20 }} />} 
-                  />
+                  <Dropdown
+                    overlay={
+                      <Menu>
+                        {/* Chỉ hiển thị xóa cuộc trò chuyện nếu là nhóm chat */}
+                        {conversations.find(c => c.id === currentConversation.id)?.user_id !== user?.id && (
+                          <Item 
+                            key="delete" 
+                            danger 
+                            onClick={() => currentConversation?.id && handleDeleteConversation(currentConversation.id)}
+                          >
+                            {localStrings.Messages.DeleteConversation || "Delete Conversation"}
+                          </Item>
+                        )}
+                        <Item key="leave">
+                          {localStrings.Messages.LeaveConversation || "Leave Conversation"}
+                        </Item>
+                      </Menu>
+                    }
+                    trigger={['click']}
+                  >
+                    <Button 
+                      type="text" 
+                      icon={<EllipsisOutlined style={{ fontSize: 20 }} />} 
+                    />
+                  </Dropdown>
                 </div>
               </>
             ) : (

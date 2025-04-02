@@ -340,26 +340,19 @@ const fetchConversations = async () => {
     }
   };
 
-  const createConversation = async (name: string, image?: string) => {
+  const createConversation = async (name: string, image?: File | string, userIds?: string[]) => {
     if (!user?.id) return null;
     
     try {
       const createResponse = await defaultMessagesRepo.createConversation({
         name: name,
         image: image,
-        user_ids: [] 
+        user_ids: userIds && userIds.length > 0 ? userIds : [user.id]
       });
       
       if (createResponse.data) {
         const newConversation = createResponse.data;
-
-        await defaultMessagesRepo.createConversationDetail({
-          conversation_id: newConversation.id,
-          user_id: user.id
-        });
-        
         await fetchConversations();
-        
         return newConversation;
       }
       return null;
@@ -496,6 +489,22 @@ const fetchConversations = async () => {
     }
   };
 
+  const deleteConversation = async (conversationId: string) => {
+    if (!user?.id) return;
+    
+    try {
+      await defaultMessagesRepo.deleteConversation({ conversation_id: conversationId });
+      
+      await fetchConversations();
+      
+      if (currentConversation?.id === conversationId) {
+        setCurrentConversation(null);
+      }
+    } catch (error) {
+      message.error(localStrings.Public.Error || "Error deleting conversation");
+    }
+  };
+
   const markConversationAsRead = async (conversationId: string) => {
     if (!user?.id || !conversationId) return;
     
@@ -555,6 +564,7 @@ const fetchConversations = async () => {
     deleteMessage,
     createConversation,
     updateConversation,
+    deleteConversation,
     markConversationAsRead, 
     loadMoreMessages,
     handleScroll,

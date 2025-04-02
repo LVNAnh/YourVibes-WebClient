@@ -54,9 +54,33 @@ interface IMessagesRepo {
 export class MessagesRepo implements IMessagesRepo {
   // Conversation methods
   async createConversation(
-    data: CreateConversationRequestModel
+    data: CreateConversationRequestModel | FormData
   ): Promise<BaseApiResponseModel<ConversationResponseModel>> {
-    return client.post(ApiPath.CREATE_CONVERSATION, data);
+    if (data instanceof FormData) {
+      return client.post(ApiPath.CREATE_CONVERSATION, data, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+    }
+  
+    const formData = new FormData();
+    
+    if (data.name) {
+      formData.append('name', data.name);
+    }
+    
+    if (data.image) {
+      formData.append('image', data.image);
+    }
+    
+    if (data.user_ids && data.user_ids.length > 0) {
+      data.user_ids.forEach(userId => {
+        formData.append('user_ids', userId);
+      });
+    }
+  
+    return client.post(ApiPath.CREATE_CONVERSATION, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
   }
 
   async getConversations(
