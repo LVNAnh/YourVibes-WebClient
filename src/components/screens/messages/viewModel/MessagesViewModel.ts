@@ -609,7 +609,6 @@ export const useMessagesViewModel = () => {
     setCurrentConversation: (conversation: ConversationResponseModel | null) => {
       setCurrentConversation(conversation);
       
-      // Mark conversation as read when selected
       if (conversation?.id) {
         markConversationAsRead(conversation.id);
       }
