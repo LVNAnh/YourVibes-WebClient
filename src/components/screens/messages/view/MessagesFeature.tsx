@@ -243,12 +243,56 @@ const MessagesFeature: React.FC = () => {
             />
           </div>
           <div style={{ height: "calc(100% - 130px)", overflow: "auto" }}>
-            {conversationsLoading ? (
-              <div style={{ padding: "16px" }}>
-                <Skeleton avatar paragraph={{ rows: 1 }} active />
-                <Skeleton avatar paragraph={{ rows: 1 }} active />
-                <Skeleton avatar paragraph={{ rows: 1 }} active />
+          {conversationsLoading ? (
+            <div style={{ padding: "0 16px" }}>
+              {/* Header skeleton */}
+              <div style={{ 
+                display: "flex", 
+                justifyContent: "space-between", 
+                alignItems: "center", 
+                marginBottom: 16,
+                paddingTop: 16 
+              }}>
+                <Skeleton.Button active style={{ width: 100, height: 24 }} />
+                <Skeleton.Avatar active shape="circle" size="small" />
               </div>
+              
+              {/* Search box skeleton */}
+              <div style={{ marginBottom: 16 }}>
+                <Skeleton.Input active style={{ width: '100%', height: 32 }} size="small" />
+              </div>
+              
+              {/* Conversations list skeleton */}
+              {Array(6).fill(null).map((_, index) => (
+                <div 
+                  key={index} 
+                  style={{ 
+                    display: "flex", 
+                    padding: "12px 0", 
+                    borderBottom: "1px solid #f0f0f0",
+                    alignItems: "center" 
+                  }}
+                >
+                  <Skeleton.Avatar active size="large" style={{ flexShrink: 0 }} />
+                  <div style={{ marginLeft: 12, flex: 1 }}>
+                    <Skeleton.Input active style={{ width: '70%', height: 16 }} size="small" />
+                    <div style={{ marginTop: 6 }}>
+                      <Skeleton.Input active style={{ width: '90%', height: 14 }} size="small" />
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                    <Skeleton.Input active style={{ width: 35, height: 12 }} size="small" />
+                    <div style={{ 
+                      width: 18, 
+                      height: 18, 
+                      borderRadius: '50%', 
+                      background: '#f0f0f0', 
+                      marginTop: 8 
+                    }} />
+                  </div>
+                </div>
+              ))}
+            </div>
             ) : (
               <>
                 {filteredConversations.length === 0 ? (
@@ -497,8 +541,13 @@ const MessagesFeature: React.FC = () => {
                 </div>
               </>
             ) : (
-              <div style={{ width: "100%", textAlign: "center" }}>
-                <Text type="secondary">{localStrings.Messages.SelectConversation || "Select a conversation"}</Text>
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", padding: "20px" }}>
+                <div style={{ textAlign: "center", opacity: 0.5 }}>
+                  <div style={{ fontSize: 64, marginBottom: 20 }}>💬</div>
+                  <Text type="secondary" style={{ fontSize: 16 }}>
+                    {localStrings.Messages?.SelectConversationToChat || "Select a conversation to start chatting"}
+                  </Text>
+                </div>
               </div>
             )}
           </Header>
@@ -520,8 +569,127 @@ const MessagesFeature: React.FC = () => {
               <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                 {/* Loading indicator for initial load */}
                 {messagesLoading && messages.length === 0 ? (
-                  <div style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center" }}>
-                    <Spin size="large" />
+                  <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                    {/* Header skeleton */}
+                    <div style={{ 
+                      height: 64, 
+                      borderBottom: '1px solid #f0f0f0', 
+                      padding: '0 16px',
+                      display: 'flex',
+                      alignItems: 'center'
+                    }}>
+                      <Skeleton.Avatar active size="default" style={{ marginRight: 12 }} />
+                      <Skeleton.Input active style={{ width: 180, height: 16 }} size="small" />
+                      <div style={{ marginLeft: 'auto' }}>
+                        <Skeleton.Button active style={{ width: 32, height: 32 }} shape="circle" />
+                      </div>
+                    </div>
+                    
+                    {/* Message area skeleton */}
+                    <div style={{ 
+                      flex: 1, 
+                      padding: '16px', 
+                      display: 'flex', 
+                      flexDirection: 'column',
+                      justifyContent: 'flex-end'
+                    }}>
+                      {/* Skeleton for a date separator */}
+                      <div style={{ 
+                        display: 'flex', 
+                        justifyContent: 'center', 
+                        margin: '10px 0' 
+                      }}>
+                        <Skeleton.Input active style={{ width: 80, height: 20 }} size="small" />
+                      </div>
+                      
+                      {/* Skeletons for messages */}
+                      {/* Received message */}
+                      <div style={{ display: 'flex', marginBottom: 16, alignItems: 'flex-end' }}>
+                        <Skeleton.Avatar active size="small" style={{ marginRight: 8 }} />
+                        <div style={{ maxWidth: '60%' }}>
+                          <div style={{ 
+                            background: '#f5f5f5', 
+                            borderRadius: '12px',
+                            padding: '10px'
+                          }}>
+                            <Skeleton.Input active style={{ width: 80, height: 14 }} size="small" />
+                            <div style={{ marginTop: 4 }}>
+                              <Skeleton.Input active style={{ width: 140, height: 14 }} size="small" />
+                            </div>
+                            <div style={{ marginTop: 4 }}>
+                              <Skeleton.Input active style={{ width: 180, height: 14 }} size="small" />
+                            </div>
+                            <div style={{ 
+                              display: 'flex', 
+                              justifyContent: 'flex-end', 
+                              marginTop: 4 
+                            }}>
+                              <Skeleton.Input active style={{ width: 40, height: 10 }} size="small" />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Sent message */}
+                      <div style={{ 
+                        display: 'flex', 
+                        justifyContent: 'flex-end', 
+                        marginBottom: 16 
+                      }}>
+                        <div style={{ maxWidth: '60%' }}>
+                          <div style={{ 
+                            background: '#e6f7ff', 
+                            borderRadius: '12px',
+                            padding: '10px'
+                          }}>
+                            <Skeleton.Input active style={{ width: 160, height: 14 }} size="small" />
+                            <div style={{ marginTop: 4 }}>
+                              <Skeleton.Input active style={{ width: 120, height: 14 }} size="small" />
+                            </div>
+                            <div style={{ 
+                              display: 'flex', 
+                              justifyContent: 'flex-end', 
+                              marginTop: 4 
+                            }}>
+                              <Skeleton.Input active style={{ width: 40, height: 10 }} size="small" />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Another received message */}
+                      <div style={{ display: 'flex', marginBottom: 16, alignItems: 'flex-end' }}>
+                        <Skeleton.Avatar active size="small" style={{ marginRight: 8 }} />
+                        <div style={{ maxWidth: '60%' }}>
+                          <div style={{ 
+                            background: '#f5f5f5', 
+                            borderRadius: '12px',
+                            padding: '10px'
+                          }}>
+                            <Skeleton.Input active style={{ width: 200, height: 14 }} size="small" />
+                            <div style={{ 
+                              display: 'flex', 
+                              justifyContent: 'flex-end', 
+                              marginTop: 4 
+                            }}>
+                              <Skeleton.Input active style={{ width: 40, height: 10 }} size="small" />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Message input skeleton */}
+                    <div style={{ 
+                      borderTop: '1px solid #f0f0f0', 
+                      padding: '12px 16px',
+                      display: 'flex',
+                      alignItems: 'center'
+                    }}>
+                      <Skeleton.Button active style={{ width: 32, height: 32, marginRight: 8 }} shape="circle" />
+                      <Skeleton.Input active style={{ flex: 1, height: 36 }} size="default" />
+                      <Skeleton.Button active style={{ width: 32, height: 32, marginLeft: 8 }} shape="circle" />
+                    </div>
                   </div>
                 ) : (
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -540,7 +708,12 @@ const MessagesFeature: React.FC = () => {
                     
                     {/* Loading indicator when fetching more messages */}
                     {messagesLoading && messages.length > 0 && (
-                      <div style={{ textAlign: "center", padding: "10px 0" }}>
+                      <div style={{ 
+                        textAlign: "center", 
+                        padding: "10px 0",
+                        display: "flex",
+                        justifyContent: "center"
+                      }}>
                         <Spin size="small" />
                       </div>
                     )}
@@ -577,8 +750,13 @@ const MessagesFeature: React.FC = () => {
                 )}
               </div>
             ) : (
-              <div style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center" }}>
-                <Text type="secondary">{localStrings.Messages.SelectConversationToChat || "Select a conversation to start chatting"}</Text>
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", padding: "20px" }}>
+                <div style={{ textAlign: "center", opacity: 0.5 }}>
+                  <div style={{ fontSize: 64, marginBottom: 20 }}>💬</div>
+                  <Text type="secondary" style={{ fontSize: 16 }}>
+                    {localStrings.Messages?.SelectConversationToChat || "Select a conversation to start chatting"}
+                  </Text>
+                </div>
               </div>
             )}
           </Content>
