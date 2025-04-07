@@ -9,10 +9,12 @@ import useColor from "@/hooks/useColor";
 import { ConversationResponseModel } from "@/api/features/messages/models/ConversationModel";
 import { MessageResponseModel } from "@/api/features/messages/models/MessageModel";
 import NewConversationModal from "./NewConversationModal";
+import AddMemberModal from "./AddMemberModal";
 import MessageItem from "./MessageItem";
 import DateSeparator from "./DateSeparator";
 import EditConversationModal from "./EditConversationModal";
 import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react';
+import { defaultMessagesRepo } from "@/api/features/messages/MessagesRepo";
 
 const { Header, Content, Sider } = Layout;
 const { Search } = Input;
@@ -48,12 +50,16 @@ const MessagesFeature: React.FC = () => {
     initialMessagesLoaded,
     unreadMessages,
     markConversationAsRead,
+    addConversationMembers,
+    leaveConversation,
   } = useMessagesViewModel();
 
   const [isMobile, setIsMobile] = useState(false);
   const [showConversation, setShowConversation] = useState(true);
   const { backgroundColor, lightGray, brandPrimary } = useColor();
   const [editConversationModalVisible, setEditConversationModalVisible] = useState(false);
+  const [addMemberModalVisible, setAddMemberModalVisible] = useState(false);
+  const [existingMemberIds, setExistingMemberIds] = useState<string[]>([]);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -145,6 +151,57 @@ const MessagesFeature: React.FC = () => {
           message.success(localStrings.Messages?.ConversationDeleted || 'Conversation deleted successfully');
         } catch (error) {
           message.error(localStrings.Public.Error || 'An error occurred');
+        }
+      }
+    });
+  };
+
+  const fetchExistingMembers = async (conversationId: string) => {
+    try {
+      const response = await defaultMessagesRepo.getConversationDetailByUserID({
+        conversation_id: conversationId
+      });
+      
+      if (response.data) {
+        const members = Array.isArray(response.data) ? response.data : [response.data];
+        const memberIds = members.map(member => member.user_id).filter(Boolean) as string[];
+        setExistingMemberIds(memberIds);
+      }
+    } catch (error) {
+      console.error("Error fetching conversation members:", error);
+      setExistingMemberIds([]);
+    }
+  };
+
+  const handleOpenAddMemberModal = async () => {
+    if (currentConversation?.id) {
+      await fetchExistingMembers(currentConversation.id);
+      setAddMemberModalVisible(true);
+    }
+  };
+  
+  const handleAddMembers = async (userIds: string[]) => {
+    if (currentConversation?.id) {
+      await addConversationMembers(currentConversation.id, userIds);
+    }
+  };
+
+  const handleLeaveConversation = () => {
+    if (!currentConversation?.id) return;
+    
+    Modal.confirm({
+      title: localStrings.Messages?.LeaveConversation || 'Leave Conversation',
+      content: localStrings.Messages?.ConfirmLeaveConversation || 'Are you sure you want to leave this conversation?',
+      okText: localStrings.Public?.Yes || 'Yes',
+      cancelText: localStrings.Public?.No || 'No',
+      onOk: async () => {
+        try {
+          if (currentConversation.id) { 
+            await leaveConversation(currentConversation.id);
+            message.success(localStrings.Messages?.LeftConversation || 'You left the conversation');
+          }
+        } catch (error) {
+          message.error(localStrings.Public?.Error || 'An error occurred');
         }
       }
     });
@@ -396,37 +453,47 @@ const MessagesFeature: React.FC = () => {
                   </Text>
                 </div>
                 <div style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}>
-                  <Dropdown
-                    overlay={
-                      <Menu>
-                        {/* Chỉ hiển thị xóa cuộc trò chuyện nếu là nhóm chat */}
+                <Dropdown
+                  overlay={
+                    <Menu>
+                      <Item 
+                        key="edit" 
+                        onClick={() => setEditConversationModalVisible(true)}
+                      >
+                        {localStrings.Messages?.EditConversation || "Edit Conversation Info"}
+                      </Item>
+                      <Item 
+                        key="addMember" 
+                        onClick={handleOpenAddMemberModal}
+                      >
+                        {localStrings.Messages?.AddMembers || "Add Members"}
+                      </Item>
+                      {currentConversation?.user_id === user?.id && (
                         <Item 
-                          key="edit" 
-                          onClick={() => setEditConversationModalVisible(true)}
+                          key="delete" 
+                          danger 
+                          onClick={() => currentConversation?.id && handleDeleteConversation(currentConversation.id)}
                         >
-                          {localStrings.Messages.EditConversation || "Edit Conversation Info"}
+                          {localStrings.Messages?.DeleteConversation || "Delete Conversation"}
                         </Item>
-                        {conversations.find(c => c.id === currentConversation.id)?.user_id !== user?.id && (
-                          <Item 
-                            key="delete" 
-                            danger 
-                            onClick={() => currentConversation?.id && handleDeleteConversation(currentConversation.id)}
-                          >
-                            {localStrings.Messages.DeleteConversation || "Delete Conversation"}
-                          </Item>
-                        )}
-                        <Item key="leave">
-                          {localStrings.Messages.LeaveConversation || "Leave Conversation"}
+                      )}
+                      {(currentConversation?.name && !currentConversation.name.includes(" & ")) && (
+                        <Item 
+                          key="leave" 
+                          onClick={handleLeaveConversation}
+                        >
+                          {localStrings.Messages?.LeaveConversation || "Leave Conversation"}
                         </Item>
-                      </Menu>
-                    }
-                    trigger={['click']}
-                  >
-                    <Button 
-                      type="text" 
-                      icon={<EllipsisOutlined style={{ fontSize: 20 }} />} 
-                    />
-                  </Dropdown>
+                      )}
+                    </Menu>
+                  }
+                  trigger={['click']}
+                >
+                  <Button 
+                    type="text" 
+                    icon={<EllipsisOutlined style={{ fontSize: 20 }} />} 
+                  />
+                </Dropdown>
                 </div>
               </>
             ) : (
@@ -589,6 +656,14 @@ const MessagesFeature: React.FC = () => {
         onCancel={() => setEditConversationModalVisible(false)}
         onUpdateConversation={handleUpdateConversation}
         currentConversation={currentConversation}
+      />
+
+      <AddMemberModal 
+        visible={addMemberModalVisible}
+        onCancel={() => setAddMemberModalVisible(false)}
+        onAddMembers={handleAddMembers}
+        conversationId={currentConversation?.id}
+        existingMemberIds={existingMemberIds}
       />
     </Layout>
   );

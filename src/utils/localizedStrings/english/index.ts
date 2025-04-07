@@ -413,6 +413,13 @@ export const ENGLocalizedStrings = {
     ConversationNameRequired: "Conversation Name Required",
     GroupName: "Group Name",
     ConversationUpdated: "Conversation Updated",
+    MembersAdded: "Members Added",
+    AddMembers: "Add Members",
+    Add: "Add",
+    SelectFriendsToAdd: "Select Friends To Add",
+    NoFriendsToAdd: "No Friend To Add",
+    ConfirmLeaveConversation: "Confirm Leave Conversation",
+    LeftConversation: "Left Conversation",
 
   }
 };
