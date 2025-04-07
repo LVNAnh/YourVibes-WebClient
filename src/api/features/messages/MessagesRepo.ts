@@ -17,7 +17,7 @@ import {
   GetConversationDetailByUserIDRequestModel,
   DeleteConversationDetailRequestModel,
   ConversationDetailResponseModel,
-  UpdateConversationDetail // Import the existing update model
+  UpdateConversationDetailRequestModel // Import the existing update model
 } from "./models/ConversationDetailModel";
 
 import {
@@ -42,7 +42,7 @@ interface IMessagesRepo {
   getConversationDetailByID(data: GetConversationDetailByIDRequestModel): Promise<BaseApiResponseModel<ConversationDetailResponseModel>>;
   getConversationDetailByUserID(data: GetConversationDetailByUserIDRequestModel): Promise<BaseApiResponseModel<ConversationDetailResponseModel>>;
   deleteConversationDetail(data: DeleteConversationDetailRequestModel): Promise<BaseApiResponseModel<any>>;
-  updateConversationDetail(data: UpdateConversationDetail): Promise<BaseApiResponseModel<ConversationDetailResponseModel>>; // New method
+  updateConversationDetail(data: UpdateConversationDetailRequestModel): Promise<BaseApiResponseModel<ConversationDetailResponseModel>>; // New method
 
   // Message methods
   createMessage(data: CreateMessageRequestModel): Promise<BaseApiResponseModel<MessageResponseModel>>;
@@ -170,7 +170,7 @@ export class MessagesRepo implements IMessagesRepo {
   }
 
   async updateConversationDetail(
-    data: UpdateConversationDetail
+    data: UpdateConversationDetailRequestModel
   ): Promise<BaseApiResponseModel<ConversationDetailResponseModel>> {
     return client.patch(ApiPath.UPDATE_CONVERSATION_DETAIL, {
       conversation_id: data.conversation_id,

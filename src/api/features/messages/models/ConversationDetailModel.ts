@@ -20,7 +20,7 @@ export interface DeleteConversationDetailRequestModel {
     conversation_id?: string,
 }
 
-export interface UpdateConversationDetail {
+export interface UpdateConversationDetailRequestModel {
     conversation_id?: string,
     user_id?: string,
 }
