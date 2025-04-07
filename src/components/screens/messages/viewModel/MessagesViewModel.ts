@@ -375,6 +375,15 @@ export const useMessagesViewModel = () => {
       
       if (createResponse.data) {
         const newConversation = createResponse.data;
+        
+        if (isWebSocketConnected) {
+          wsSendMessage({
+            type: "new_conversation",
+            conversation: newConversation,
+            members: userIds
+          });
+        }
+        
         await fetchConversations();
         return newConversation;
       }

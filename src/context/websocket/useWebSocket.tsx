@@ -72,6 +72,10 @@ export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
               if (message.conversation_id) {
                 addNewMessage(message.conversation_id, message);
               }
+            } else if (data.type === "new_conversation") {
+              if (data.conversation) {
+                addNewConversation(data.conversation);
+              }
             } else {
               if (data.conversation_id) {
                 const formattedMessage = {
@@ -149,6 +153,15 @@ export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
       }
     };
   }, [user?.id]);
+
+  const addNewConversation = (conversation: ConversationResponseModel) => {
+    setConversations(prev => {
+      const exists = prev.some(c => c.id === conversation.id);
+      if (exists) return prev;
+      
+      return [conversation, ...prev];
+    });
+  };
 
   const addMessageListener = (callback: (conversationId: string, messages: MessageResponseModel[]) => void) => {
     messageListenersRef.current.push(callback);
@@ -344,7 +357,8 @@ export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
     updateConversations,
     getConversations,
     conversations,
-    addMessageListener
+    addMessageListener,
+    addNewConversation,
   };
 
   return (

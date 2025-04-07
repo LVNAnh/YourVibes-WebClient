@@ -17,4 +17,5 @@ export interface WebSocketContextType {
   getConversations: () => ConversationResponseModel[];
   conversations: ConversationResponseModel[];
   addMessageListener: (callback: (conversationId: string, messages: MessageResponseModel[]) => void) => () => void;
+  addNewConversation: (conversation: ConversationResponseModel) => void;
 }
