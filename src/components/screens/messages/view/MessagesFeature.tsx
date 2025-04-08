@@ -85,8 +85,10 @@ const MessagesFeature: React.FC = () => {
   };
 
   const handleSendMessage = () => {
-    if (messageText.trim() && currentConversation) {
+    if (messageText.trim() && currentConversation && messageText.length <= 500) {
       sendMessage();
+    } else if (messageText.length > 500) {
+      message.error(localStrings.Messages.MessageTooLong || "Message cannot exceed 500 characters");
     }
   };
 
@@ -512,15 +514,13 @@ const MessagesFeature: React.FC = () => {
                       >
                         {localStrings.Messages?.AddMembers || "Add Members"}
                       </Item>
-                      {currentConversation?.user_id === user?.id && (
-                        <Item 
-                          key="delete" 
-                          danger 
-                          onClick={() => currentConversation?.id && handleDeleteConversation(currentConversation.id)}
-                        >
-                          {localStrings.Messages?.DeleteConversation || "Delete Conversation"}
-                        </Item>
-                      )}
+                      <Item 
+                        key="delete" 
+                        danger 
+                        onClick={() => currentConversation?.id && handleDeleteConversation(currentConversation.id)}
+                      >
+                        {localStrings.Messages?.DeleteConversation || "Delete Conversation"}
+                      </Item>
                       {(currentConversation?.name && !currentConversation.name.includes(" & ")) && (
                         <Item 
                           key="leave" 
@@ -767,54 +767,75 @@ const MessagesFeature: React.FC = () => {
             borderTop: `1px solid ${lightGray}`,
             background: backgroundColor,
             display: "flex",
-            alignItems: "center"
+            flexDirection: "column", 
           }}>
             {currentConversation && (
               <>
-                <Popover
-                  content={
-                    <EmojiPicker 
-                      onEmojiClick={onEmojiClick}
-                      searchPlaceholder="Tìm emoji..."
-                      width={300}
-                      height={400}
-                      theme={Theme.LIGHT}
-                      lazyLoadEmojis={true}
+                <div style={{ display: "flex", alignItems: "center", width: "100%" }}>
+                  <Popover
+                    content={
+                      <EmojiPicker 
+                        onEmojiClick={onEmojiClick}
+                        searchPlaceholder="Tìm emoji..."
+                        width={300}
+                        height={400}
+                        theme={Theme.LIGHT}
+                        lazyLoadEmojis={true}
+                      />
+                    }
+                    trigger="click"
+                    open={emojiPickerVisible}
+                    onOpenChange={setEmojiPickerVisible}
+                    placement="topRight"
+                  >
+                    <Button
+                      type="text"
+                      icon={<SmileOutlined style={{ fontSize: "20px", color: "#666" }} />}
+                      style={{ marginRight: 8 }}
                     />
-                  }
-                  trigger="click"
-                  open={emojiPickerVisible}
-                  onOpenChange={setEmojiPickerVisible}
-                  placement="topRight"
-                >
-                  <Button
-                    type="text"
-                    icon={<SmileOutlined style={{ fontSize: "20px", color: "#666" }} />}
-                    style={{ marginRight: 8 }}
+                  </Popover>
+                  
+                  <Input
+                    placeholder={localStrings.Messages?.TypeMessage || "Type a message..."}
+                    value={messageText}
+                    onChange={(e) => {
+                      const newValue = e.target.value;
+                      setMessageText(newValue);
+                      // Hiển thị thông báo khi vượt quá 500 ký tự
+                      if (newValue.length > 500 && messageText.length <= 500) {
+                        message.warning(localStrings.Messages?.MessageTooLong || "Message cannot exceed 500 characters");
+                      }
+                    }}
+                    onKeyPress={handleKeyPress}
+                    status={messageText.length > 500 ? "error" : ""}
+                    style={{ 
+                      borderRadius: 20,
+                      padding: "8px 12px",
+                      flex: 1
+                    }}
+                    disabled={!isWebSocketConnected}
                   />
-                </Popover>
+                  
+                  <Button
+                    type="primary"
+                    shape="circle"
+                    icon={<SendOutlined />}
+                    onClick={handleSendMessage}
+                    style={{ marginLeft: 8 }}
+                    disabled={!messageText.trim() || !isWebSocketConnected || messageText.length > 500}
+                  />
+                </div>
                 
-                <Input
-                  placeholder={localStrings.Messages?.TypeMessage || "Type a message..."}
-                  value={messageText}
-                  onChange={(e) => setMessageText(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  style={{ 
-                    borderRadius: 20,
-                    padding: "8px 12px",
-                    flex: 1
-                  }}
-                  disabled={!isWebSocketConnected}
-                />
-                
-                <Button
-                  type="primary"
-                  shape="circle"
-                  icon={<SendOutlined />}
-                  onClick={handleSendMessage}
-                  style={{ marginLeft: 8 }}
-                  disabled={!messageText.trim() || !isWebSocketConnected}
-                />
+                {/* Character counter */}
+                <div style={{ 
+                  display: "flex", 
+                  justifyContent: "flex-end", 
+                  fontSize: "12px", 
+                  marginTop: "4px",
+                  color: messageText.length > 500 ? "#ff4d4f" : "rgba(0, 0, 0, 0.45)" 
+                }}>
+                  {messageText.length}/500
+                </div>
               </>
             )}
           </div>
