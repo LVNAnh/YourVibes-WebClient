@@ -5,6 +5,8 @@ import { AntdRegistry } from "@ant-design/nextjs-registry";
 import "./globals.css";
 import { ConfigProvider } from "antd";
 import useColor from "@/hooks/useColor";
+import { WebSocketNotiProvider } from "@/context/notiSocket/useNotiSocket";
+import { WebSocketMessageProvider } from "@/context/websocket/useWebSocket";
 
 export const metadata: Metadata = {
   title: "YourVibes",
@@ -31,9 +33,13 @@ export default function RootLayout({
           }}
         >
           <AuthProvider>
-            <PostProvider>
-              <body>{children}</body>
-            </PostProvider>
+            <WebSocketNotiProvider>
+              <WebSocketMessageProvider>
+                <PostProvider>
+                  <body>{children}</body>
+                </PostProvider>
+              </WebSocketMessageProvider>
+            </WebSocketNotiProvider>
           </AuthProvider>
         </ConfigProvider>
       </AntdRegistry>

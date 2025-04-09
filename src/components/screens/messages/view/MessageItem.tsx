@@ -36,14 +36,14 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, onDelete }) => {
       key: "delete",
       label: (
         <Popconfirm
-          title={localStrings.Messages.ConfirmDeleteMessage || "Delete this message?"}
+          title={localStrings.Messages.ConfirmDeleteMessage}
           onConfirm={handleDelete}
-          okText={localStrings.Public.Yes || "Yes"}
-          cancelText={localStrings.Public.No || "No"}
+          okText={localStrings.Public.Yes}
+          cancelText={localStrings.Public.No}
         >
           <span>
             <DeleteOutlined style={{ marginRight: 8 }} />
-            {localStrings.Public.Delete || "Delete"}
+            {localStrings.Public.Delete}
           </span>
         </Popconfirm>
       ),

@@ -55,12 +55,12 @@ const EditConversationModal: React.FC<EditConversationModalProps> = ({
     const isLt5M = file.size / 1024 / 1024 < 5;
     
     if (!isImage) {
-      message.error(localStrings.Messages?.OnlyImageFiles || 'You can only upload image files!');
+      message.error(localStrings.Messages.OnlyImageFiles);
       return false;
     }
     
     if (!isLt5M) {
-      message.error(localStrings.Messages?.ImageMustSmallerThan5M || 'Image must smaller than 5MB!');
+      message.error(localStrings.Messages.ImageMustSmallerThan5M);
       return false;
     }
     
@@ -112,11 +112,11 @@ const EditConversationModal: React.FC<EditConversationModalProps> = ({
   return (
     <Modal
       open={visible}
-      title={localStrings.Messages.EditConversation || "Edit Conversation Info"}
+      title={localStrings.Messages.EditConversation}
       onCancel={onCancel}
       footer={[
         <Button key="cancel" onClick={onCancel}>
-          {localStrings.Public.Cancel || "Cancel"}
+          {localStrings.Public.Cancel}
         </Button>,
         <Button 
           key="update" 
@@ -124,23 +124,23 @@ const EditConversationModal: React.FC<EditConversationModalProps> = ({
           onClick={handleUpdateConversation} 
           loading={updating}
         >
-          {localStrings.Messages.Update || "Update"}
+          {localStrings.Messages.Update}
         </Button>
       ]}
     >
       <Form form={form} layout="vertical">
         <Form.Item 
           name="name" 
-          label={localStrings.Messages?.ConversationName || "Conversation Name"}
-          rules={[{ required: true, message: localStrings.Messages.ConversationNameRequired || "Please enter conversation name" }]}
+          label={localStrings.Messages.ConversationName}
+          rules={[{ required: true, message: localStrings.Messages.ConversationNameRequired}]}
         >
-          <Input placeholder={localStrings.Messages.GroupName || "Group Name"} />
+          <Input placeholder={localStrings.Messages.GroupName} />
         </Form.Item>
         
         {/* Image Upload Section */}
         <Form.Item 
           name="image" 
-          label={localStrings.Messages?.ConversationImage || "Conversation Image"}
+          label={localStrings.Messages?.ConversationImage}
         >
           <Dragger
             name="avatar"
@@ -185,7 +185,7 @@ const EditConversationModal: React.FC<EditConversationModalProps> = ({
                     background: 'rgba(255, 255, 255, 0.7)'
                   }}
                 >
-                  {localStrings.Messages.Remove || "Remove"}
+                  {localStrings.Messages.Remove}
                 </Button>
               </div>
             ) : (
@@ -194,10 +194,10 @@ const EditConversationModal: React.FC<EditConversationModalProps> = ({
                   <InboxOutlined />
                 </p>
                 <p className="ant-upload-text">
-                  {localStrings.Messages?.ClickOrDragImageToUpload || "Click or drag image to upload"}
+                  {localStrings.Messages?.ClickOrDragImageToUpload}
                 </p>
                 <p className="ant-upload-hint">
-                  {localStrings.Messages?.SupportSingleImageUpload || "Support for a single image upload (max 5MB)"}
+                  {localStrings.Messages?.SupportSingleImageUpload}
                 </p>
               </div>
             )}

@@ -1,34 +1,22 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useAuth } from "@/context/auth/useAuth";
 import { message } from "antd";
-//Comments
 import { CommentsResponseModel } from "@/api/features/comment/models/CommentResponseModel";
 import { defaultCommentRepo } from "@/api/features/comment/CommentRepo";
-import { CreateCommentsRequestModel } from "@/api/features/comment/models/CreateCommentsModel"; 
-//LikeComments
+import { CreateCommentsRequestModel } from "@/api/features/comment/models/CreateCommentsModel";
 import { defaultLikeCommentRepo } from "@/api/features/likeComment/LikeCommentRepo";
 import { LikeCommentResponseModel } from "@/api/features/likeComment/models/LikeCommentResponses";
-//UserLikePost
 import { defaultPostRepo, PostRepo } from "@/api/features/post/PostRepo";
 import { LikeUsersModel } from "@/api/features/post/models/LikeUsersModel";
-import { Modal } from "antd"; 
+import { Modal } from "antd";
 
-const PostDetailsViewModel = (
-  postId: string,
-  repo: PostRepo,
-) => {
+const PostDetailsViewModel = (postId: string, repo: PostRepo) => {
   const [comments, setComments] = useState<CommentsResponseModel[]>([]);
-  const [replyMap, setReplyMap] = useState<{
-    [key: string]: CommentsResponseModel[];
-  }>({});
-
+  const [replyMap, setReplyMap] = useState<{ [key: string]: CommentsResponseModel[] }>({});
   const [likeCount, setLikeCount] = useState<{ [key: string]: number }>({});
-  const [userLikes, setUserLikes] = useState<{ [key: string]: boolean }>({});
   const [isLiked, setIsLiked] = useState<{ [key: string]: boolean }>({});
   const [heartColors, setHeartColors] = useState<{ [key: string]: string }>({});
-  const [likedComment, setLikedComment] = useState({ is_liked: false }
-  );
-
+  const [likedComment, setLikedComment] = useState({ is_liked: false });
   const [newComment, setNewComment] = useState("");
   const [replyToCommentId, setReplyToCommentId] = useState<string | null>(null);
   const [replyToReplyId, setReplyToReplyId] = useState<string | null>(null);
@@ -37,10 +25,8 @@ const PostDetailsViewModel = (
   const [currentCommentId, setCurrentCommentId] = useState("");
   const [userLikePost, setUserLikePost] = useState<LikeUsersModel[]>([]);
   const { user, localStrings } = useAuth();
-  const [replyContent, setReplyContent] = useState("");   
-  const [visibleReplies, setVisibleReplies] = useState<{
-    [key: string]: boolean;
-  }>({}); 
+  const [replyContent, setReplyContent] = useState("");
+  const [visibleReplies, setVisibleReplies] = useState<{ [key: string]: boolean }>({});
 
   const toggleRepliesVisibility = (commentId: string) => {
     setVisibleReplies((prev) => ({
@@ -48,7 +34,7 @@ const PostDetailsViewModel = (
       [commentId]: !prev[commentId],
     }));
   };
-  
+
   const handleReplyClick = (commentId: string, isReply: boolean = false) => {
     if (isReply) {
       setReplyToReplyId(commentId);
@@ -81,21 +67,30 @@ const PostDetailsViewModel = (
     });
     if (response && response?.data) {
       setComments(response?.data);
+      const initialLikeCount: { [key: string]: number } = {};
+      const initialIsLiked: { [key: string]: boolean } = {};
+      const initialHeartColors: { [key: string]: string } = {};
+      response.data.forEach((comment) => {
+        initialLikeCount[comment.id] = comment.like_count || 0;
+        initialIsLiked[comment.id] = comment.is_liked || false;
+        initialHeartColors[comment.id] = comment.is_liked ? "red" : "gray";
+      });
+      setLikeCount(initialLikeCount);
+      setIsLiked(initialIsLiked);
+      setHeartColors(initialHeartColors);
     }
   };
 
   const fetchReplies = async (postId: string, parentId: string) => {
     try {
       const replies = await defaultCommentRepo.getReplies(postId, parentId);
-      if (replies && replies.data) { 
-        setReplyMap((prevReplyMap) => {
-          return {
-            ...prevReplyMap,
-            [parentId]: replies.data,
-          };
-        });
+      if (replies && replies.data) {
+        setReplyMap((prevReplyMap) => ({
+          ...prevReplyMap,
+          [parentId]: replies.data,
+        }));
       }
-    } catch (error) { 
+    } catch (error) {
       message.error(localStrings.PostDetails.CommentFailed);
     }
   };
@@ -103,45 +98,55 @@ const PostDetailsViewModel = (
   useEffect(() => {
     fetchComments();
   }, []);
- 
-  
+
   const handleLike = async (commentId: string) => {
-    const isLike = isLiked[commentId] === undefined ? true : !isLiked[commentId];
-  
+    const currentIsLiked = isLiked[commentId] ?? false;
+    const newIsLiked = !currentIsLiked;
+
     try {
       const response = await defaultLikeCommentRepo.postLikeComment({
         commentId,
-        isLike,
+        isLike: newIsLiked,
       });
-  
+
       if (response && response.data) {
-        const likeCommentResponse: LikeCommentResponseModel = response.data;
-        setIsLiked((prevIsLiked) => ({ ...prevIsLiked, [commentId]: likeCommentResponse.is_liked ?? false }));
-        setLikeCount((prevLikeCount) => ({ ...prevLikeCount, [commentId]: likeCommentResponse.like_count }));
-        setHeartColors((prevHeartColors) => ({ ...prevHeartColors, [commentId]: isLike ? 'red' : 'gray' }));
+        // Kiểm tra xem response.data có phải là mảng và có phần tử đầu tiên không
+        const likeCommentResponse = Array.isArray(response.data) && response.data[0] ? response.data[0] : null;
+        if (likeCommentResponse && typeof likeCommentResponse.like_count === "number") {
+          const newLikeCount = likeCommentResponse.like_count;
+
+          setIsLiked((prev) => ({ ...prev, [commentId]: newIsLiked }));
+          setLikeCount((prev) => ({ ...prev, [commentId]: newLikeCount }));
+          setHeartColors((prev) => ({ ...prev, [commentId]: newIsLiked ? "red" : "gray" }));
+          setLikedComment({ is_liked: newIsLiked });
+        } else {
+          // Fallback: Tăng/giảm thủ công nếu API không trả về like_count
+          setLikeCount((prev) => ({
+            ...prev,
+            [commentId]: newIsLiked ? (prev[commentId] || 0) + 1 : (prev[commentId] || 0) - 1,
+          }));
+          setIsLiked((prev) => ({ ...prev, [commentId]: newIsLiked }));
+          setHeartColors((prev) => ({ ...prev, [commentId]: newIsLiked ? "red" : "gray" }));
+          setLikedComment({ is_liked: newIsLiked });
+          console.warn("API response missing like_count, using fallback logic");
+        }
       }
     } catch (error) {
       console.error("Error liking comment:", error);
+      message.error("Failed to like/unlike comment");
     }
   };
+
   const handleEditComment = async (commentId: string) => {
     if (!currentCommentId || !editCommentContent) {
       console.error("Invalid comment ID or content");
       return;
     }
-
     await handleUpdate(currentCommentId, editCommentContent, commentId);
-    setEditModalVisible(false); // Close modal
+    setEditModalVisible(false);
     setEditCommentContent("");
     setCurrentCommentId("");
   };
-
-  const [lastChange, setLastChange] = useState(false);
-  useEffect(() => {
-    if (!lastChange) {
-      setLastChange(true);
-    }
-  }, [editCommentContent]);
 
   const handleUpdate = async (
     commentId: string,
@@ -154,34 +159,20 @@ const PostDetailsViewModel = (
         comments_id: commentId,
         content: updatedContent,
       };
-
-      const response = await defaultCommentRepo.updateComment(
-        commentId,
-        updateCommentData
-      );
-
+      const response = await defaultCommentRepo.updateComment(commentId, updateCommentData);
       if (response && response.data) {
         if (isReply) {
-          // Cập nhật reply mới
           setReplyMap((prevReplyMap) => {
-            const updatedReplies = prevReplyMap[parentId].map((reply) => {
-              if (reply.id === commentId) {
-                return { ...reply, content: updatedContent };
-              }
-              return reply;
-            });
+            const updatedReplies = prevReplyMap[parentId].map((reply) =>
+              reply.id === commentId ? { ...reply, content: updatedContent } : reply
+            );
             return { ...prevReplyMap, [parentId]: updatedReplies };
           });
-          // Hiển thị reply mới 
           setComments((prev) => [...prev, { ...response.data, replies: [] }]);
         } else {
-          // Cập nhật comment
-          const updatedComments = comments.map((comment) => {
-            if (comment.id === commentId) {
-              return { ...comment, content: updatedContent };
-            }
-            return comment;
-          });
+          const updatedComments = comments.map((comment) =>
+            comment.id === commentId ? { ...comment, content: updatedContent } : comment
+          );
           setComments(updatedComments);
         }
         fetchComments();
@@ -189,60 +180,40 @@ const PostDetailsViewModel = (
     } catch (error) {}
   };
 
-  useEffect(() => {
-    if (isEditModalVisible) { 
-    }
-  }, [isEditModalVisible]);
-
-  const handleDelete = (commentId: string) => {
+  const handleDelete = async (commentId: string) => {
     Modal.confirm({
       title: `${localStrings.PostDetails.DeleteComment}`,
       content: "",
       okText: `${localStrings.PostDetails.Yes}`,
       cancelText: `${localStrings.PostDetails.No}`,
       onCancel: () => {},
-      onOk: () => {
-        defaultCommentRepo.deleteComment(commentId)
-          .then(() => {
-            // Cập nhật trạng thái comments
-            setComments((prevComments) =>
-              prevComments.filter((comment) => comment.id !== commentId)
+      onOk: async () => {
+        try {
+          await defaultCommentRepo.deleteComment(commentId);
+          const isTopLevelComment = comments.some((c) => c.id === commentId);
+          if (isTopLevelComment) {
+            setComments((prevComments) => prevComments.filter((comment) => comment.id !== commentId));
+          } else {
+            const parentId = Object.keys(replyMap).find((key) =>
+              replyMap[key].some((reply) => reply.id === commentId)
             );
-            // Cập nhật trạng thái replyMap
-            if (replyMap[commentId]) {
-              setReplyMap((prevReplyMap) => {
-                const updatedReplies = prevReplyMap[commentId].filter(
-                  (reply) => reply.id !== commentId
-                );
-                return { ...prevReplyMap, [commentId]: updatedReplies };
-              });
+            if (parentId) {
+              setReplyMap((prevReplyMap) => ({
+                ...prevReplyMap,
+                [parentId]: prevReplyMap[parentId].filter((reply) => reply.id !== commentId),
+              }));
+              await fetchReplies(postId || "", parentId);
             }
-  
-            // Fetch comments and replies
-            fetchComments();
-            fetchReplies(postId || "", commentId);
-          })
-          .then(() => {
-            // Hiển thị thông báo khi xóa thành công
-            message.success({
-              content: localStrings.PostDetails.DeleteCommentSusesfully,
-            });
-          })
-          .catch((error) => {
-            // Hiển thị thông báo khi xóa thất bại
-            message.error({
-              content: localStrings.PostDetails.DeleteCommentFailed,
-            });
-            console.error(error);
-          });
+          }
+          await fetchComments();
+          message.success({ content: localStrings.PostDetails.DeleteCommentSusesfully });
+        } catch (error) {
+          message.error({ content: localStrings.PostDetails.DeleteCommentFailed });
+          console.error(error);
+        }
       },
     });
   };
-  
-  useEffect(() => {
-    if (replyMap && comments) {  
-    }
-  }, [replyMap, comments]);
 
   const handleAddComment = async (comment: string) => {
     if (comment.trim()) {
@@ -250,26 +221,19 @@ const PostDetailsViewModel = (
         post_id: postId,
         content: comment,
       };
-  
       try {
         const response = await defaultCommentRepo.createComment(commentData);
         if (!response.error) {
           const newComment = { ...response.data, replies: [] };
-          setComments((prev) => [...prev, newComment]); // Cập nhật lại state comments
-          fetchComments(); // Gọi lại hàm fetchComments để cập nhật lại danh sách comment
-          message.success({
-            content: localStrings.PostDetails.CommentSuccess,
-          });
+          setComments((prev) => [...prev, newComment]);
+          fetchComments();
+          message.success({ content: localStrings.PostDetails.CommentSuccess });
         } else {
-          message.error({
-            content: localStrings.PostDetails.CommentFailed,
-          });
+          message.error({ content: localStrings.PostDetails.CommentFailed });
         }
       } catch (error) {
         console.error("Error adding comment:", error);
-        message.error({
-          content: localStrings.PostDetails.CommentFailed,
-        });
+        message.error({ content: localStrings.PostDetails.CommentFailed });
       } finally {
         setNewComment("");
       }
@@ -279,7 +243,6 @@ const PostDetailsViewModel = (
   const handleAddReply = async (comment: string, id: string) => {
     if (comment.trim()) {
       const parentId = replyToReplyId || replyToCommentId;
-  
       const commentData: CreateCommentsRequestModel = {
         post_id: postId,
         content: comment,
@@ -289,36 +252,21 @@ const PostDetailsViewModel = (
         const response = await defaultCommentRepo.createComment(commentData);
         if (!response.error) {
           const newComment = { ...response.data, replies: [] };
-          setComments((prev) => {
-            const parentComment = prev.find(
-              (comment) => comment.id === parentId
-            );
-            return [...prev];
-          });
-          // Cập nhật lại danh sách reply cho comment cha
-          const updatedReplies = [
-            ...(replyMap[parentId || ""] || []),
-            newComment,
-          ];
+          setComments((prev) => [...prev]);
+          const updatedReplies = [...(replyMap[parentId || ""] || []), newComment];
           setReplyMap((prevReplyMap) => ({
             ...prevReplyMap,
             [parentId || ""]: updatedReplies,
           }));
-          fetchComments(); // Gọi lại hàm fetchComments để cập nhật lại danh sách comment
-          fetchReplies(postId || "", parentId || ""); // Gọi lại hàm fetchReplies để cập nhật lại danh sách reply
-          message.success({
-            content: localStrings.PostDetails.ReplySuccess,
-          });
+          fetchComments();
+          fetchReplies(postId || "", parentId || "");
+          message.success({ content: localStrings.PostDetails.ReplySuccess });
         } else {
-          message.error({
-            content: localStrings.PostDetails.ReplyFailed,
-          });
+          message.error({ content: localStrings.PostDetails.ReplyFailed });
         }
       } catch (error) {
         console.error("Error adding comment:", error);
-        message.error({
-          content: localStrings.PostDetails.ReplyFailed,
-        });
+        message.error({ content: localStrings.PostDetails.ReplyFailed });
       } finally {
         setNewComment("");
         setReplyToReplyId(null);
@@ -331,7 +279,7 @@ const PostDetailsViewModel = (
       postId: postId,
       page: 1,
       limit: 10,
-    }); 
+    });
     setUserLikePost(response?.data);
   };
 
@@ -356,13 +304,12 @@ const PostDetailsViewModel = (
       handleAddComment(newComment);
       setNewComment("");
     }
-  }; 
- 
+  };
+
   return {
     comments,
     replyMap,
     likeCount,
-    userLikes,
     newComment,
     isEditModalVisible,
     editCommentContent,
@@ -386,7 +333,7 @@ const PostDetailsViewModel = (
     handleShowEditModal,
     handleOutsideClick,
     setVisibleReplies,
-    visibleReplies, 
+    visibleReplies,
     fetchComments,
     heartColors,
     setLikedComment,
@@ -394,5 +341,5 @@ const PostDetailsViewModel = (
     setNewComment,
   };
 };
- 
+
 export default PostDetailsViewModel;

@@ -17,6 +17,7 @@ export interface Paging {
 export class Error {
   code?: number;
   message?: string;
+  message_detail?: string;
 }
 
 export enum Privacy {

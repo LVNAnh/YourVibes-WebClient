@@ -27,6 +27,7 @@ import ReportScreen from "../../report/views/Report";
 import { IoFlagSharp } from "react-icons/io5";
 import UpdateProfileViewModel from "../../updateProfile/viewModel/UpdateProfileViewModel";
 import { defaultProfileRepo } from "@/api/features/profile/ProfileRepository";
+import { MessageOutlined } from "@ant-design/icons"; // Thêm icon cho nút nhắn tin
 
 const ProfileHeader = ({
   total,
@@ -46,7 +47,7 @@ const ProfileHeader = ({
   const router = useRouter();
   const { showModal, setShowModal } = ReportViewModel();
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  const {objectPosition, setObjectPosition} = UpdateProfileViewModel(defaultProfileRepo);
+  const { objectPosition, setObjectPosition } = UpdateProfileViewModel(defaultProfileRepo);
 
   useEffect(() => {
     const savedPosition = localStorage.getItem("capwallPosition");
@@ -54,8 +55,7 @@ const ProfileHeader = ({
       setObjectPosition(savedPosition);
     }
   }, []);
-  console.log("objectPosition", objectPosition);
-  
+
   const {
     sendFriendRequest,
     sendRequestLoading,
@@ -94,6 +94,13 @@ const ProfileHeader = ({
     },
   ];
 
+  // Hàm xử lý khi nhấn nút nhắn tin
+  const handleMessageClick = () => {
+    // Điều hướng đến trang nhắn tin hoặc mở modal nhắn tin
+    router.push(`/messages?userId=${user?.id}`);
+  };
+
+  // Render friend để check status
   const renderFriendButton = useCallback(() => {
     switch (newFriendStatus) {
       case FriendStatus.NotFriend:
@@ -237,13 +244,8 @@ const ProfileHeader = ({
             alt="Cover"
             className="w-full md:max-h-[375px] max-h-[250px] object-cover"
             width="100%"
-            style={{objectPosition:objectPosition}}
+            style={{ objectPosition: objectPosition }}
           />
-              {/* <img
-              src={ user?.capwall_url}
-              alt="cover"
-              className="w-full h-72 object-contain"
-            /> */}
         </div>
 
         {/* Profile Image */}
@@ -256,45 +258,44 @@ const ProfileHeader = ({
                 md={10}
                 xl={8}
                 style={{ display: "flex", justifyContent: "center" }}
-              > 
-             <Image.PreviewGroup
-        preview={{
-          visible: isPreviewOpen, // Trạng thái mở preview
-          onVisibleChange: (visible) => setIsPreviewOpen(visible), // Đóng preview
-        }}
-      >
-        <Image
-          src={
-            user?.avatar_url ||
-            "https://static2.yan.vn/YanNews/2167221/202102/facebook-cap-nhat-avatar-doi-voi-tai-khoan-khong-su-dung-anh-dai-dien-e4abd14d.jpg"
-          }
-          style={{ display: "none" }} // Ẩn Image
-        />
-      </Image.PreviewGroup>
+              >
+                <Image.PreviewGroup
+                  preview={{
+                    visible: isPreviewOpen,
+                    onVisibleChange: (visible) => setIsPreviewOpen(visible),
+                  }}
+                >
+                  <Image
+                    src={
+                      user?.avatar_url ||
+                      "https://static2.yan.vn/YanNews/2167221/202102/facebook-cap-nhat-avatar-doi-voi-tai-khoan-khong-su-dung-anh-dai-dien-e4abd14d.jpg"
+                    }
+                    style={{ display: "none" }}
+                  />
+                </Image.PreviewGroup>
 
-      {/* Avatar hiển thị chính */}
-      <Avatar
-        src={
-          user?.avatar_url ||
-          "https://static2.yan.vn/YanNews/2167221/202102/facebook-cap-nhat-avatar-doi-voi-tai-khoan-khong-su-dung-anh-dai-dien-e4abd14d.jpg"
-        }
-        alt="Profile"
-        shape="circle"
-        size={{
-          xs: 150,
-          sm: 150,
-          md: 200,
-          lg: 200,
-          xl: 200,
-          xxl: 200,
-        }}
-        style={{
-          boxShadow: "0px 4px 6px rgba(0, 0, 0, 0.1)", 
-          border: "2px solid #f0f0f0", 
-          cursor: "pointer", 
-        }}
-        onClick={() => setIsPreviewOpen(true)} 
-      />
+                <Avatar
+                  src={
+                    user?.avatar_url ||
+                    "https://static2.yan.vn/YanNews/2167221/202102/facebook-cap-nhat-avatar-doi-voi-tai-khoan-khong-su-dung-anh-dai-dien-e4abd14d.jpg"
+                  }
+                  alt="Profile"
+                  shape="circle"
+                  size={{
+                    xs: 150,
+                    sm: 150,
+                    md: 200,
+                    lg: 200,
+                    xl: 200,
+                    xxl: 200,
+                  }}
+                  style={{
+                    boxShadow: "0px 4px 6px rgba(0, 0, 0, 0.1)",
+                    border: "2px solid #f0f0f0",
+                    cursor: "pointer",
+                  }}
+                  onClick={() => setIsPreviewOpen(true)}
+                />
               </Col>
               <Col xs={24} md={14} xl={16} className="md:mt-[60px] mt-0 pl-4">
                 <div className="md:text-left text-center mt-2">
@@ -331,6 +332,18 @@ const ProfileHeader = ({
                 <>
                   <span className="mr-4">{renderFriendButton()}</span>
 
+                  {/* Nút nhắn tin */}
+                  <Button
+                    type="default"
+                    onClick={handleMessageClick}
+                    icon={<MessageOutlined />}
+                    style={{ marginRight: 8 }}
+                  >
+                    <span className="font-bold text-base">
+                      {localStrings.Public.Message || "Message"}
+                    </span>
+                  </Button>
+
                   <Button
                     type="primary"
                     ghost
@@ -342,11 +355,11 @@ const ProfileHeader = ({
                     </span>
                   </Button>
                 </>
-              ):(
+              ) : (
                 <Button
                   type="primary"
                   ghost
-                  onClick={() =>  router.push('/updateProfile')}
+                  onClick={() => router.push("/updateProfile")}
                 >
                   <span className="font-bold text-base">
                     {localStrings.Public.EditProfile}

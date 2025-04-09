@@ -19,7 +19,7 @@ export interface PostResponseModel {
   privacy?: Privacy,
   status?: boolean,
   location?: string,
-  is_advertisement?: boolean,
+  is_advertisement?: number,
   is_liked?: boolean,
   media?: PostMediaModel[]
 }

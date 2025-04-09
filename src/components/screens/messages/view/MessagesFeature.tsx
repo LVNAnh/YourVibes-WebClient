@@ -88,7 +88,7 @@ const MessagesFeature: React.FC = () => {
     if (messageText.trim() && currentConversation && messageText.length <= 500) {
       sendMessage();
     } else if (messageText.length > 500) {
-      message.error(localStrings.Messages.MessageTooLong || "Message cannot exceed 500 characters");
+      message.error(localStrings.Messages.MessageTooLong);
     }
   };
 
@@ -133,26 +133,26 @@ const MessagesFeature: React.FC = () => {
     if (currentConversation?.id) {
       try {
         await updateConversation(currentConversation.id, name, image as string);
-        message.success(localStrings.Messages.ConversationUpdated || "Conversation updated successfully");
+        message.success(localStrings.Messages.ConversationUpdated);
         setEditConversationModalVisible(false);
       } catch (error) {
-        message.error(localStrings.Public.Error || "An error occurred");
+        message.error(localStrings.Public.Error);
       }
     }
   };
 
   const handleDeleteConversation = async (conversationId: string) => {
     Modal.confirm({
-      title: localStrings.Messages.ConfirmDeleteConversation || 'Delete Conversation',
-      content: localStrings.Messages.ConfirmDeleteConversation || 'Are you sure you want to delete this conversation?',
-      okText: localStrings.Public.Yes || 'Yes',
-      cancelText: localStrings.Public.No || 'No',
+      title: localStrings.Messages.ConfirmDeleteConversation,
+      content: localStrings.Messages.ConfirmDeleteConversation,
+      okText: localStrings.Public.Yes,
+      cancelText: localStrings.Public.No,
       onOk: async () => {
         try {
           await deleteConversation(conversationId);
-          message.success(localStrings.Messages?.ConversationDeleted || 'Conversation deleted successfully');
+          message.success(localStrings.Messages.ConversationDeleted);
         } catch (error) {
-          message.error(localStrings.Public.Error || 'An error occurred');
+          message.error(localStrings.Public.Error);
         }
       }
     });
@@ -192,18 +192,18 @@ const MessagesFeature: React.FC = () => {
     if (!currentConversation?.id) return;
     
     Modal.confirm({
-      title: localStrings.Messages?.LeaveConversation || 'Leave Conversation',
-      content: localStrings.Messages?.ConfirmLeaveConversation || 'Are you sure you want to leave this conversation?',
-      okText: localStrings.Public?.Yes || 'Yes',
-      cancelText: localStrings.Public?.No || 'No',
+      title: localStrings.Messages.LeaveConversation,
+      content: localStrings.Messages.ConfirmLeaveConversation,
+      okText: localStrings.Public.Yes,
+      cancelText: localStrings.Public.No,
       onOk: async () => {
         try {
           if (currentConversation.id) { 
             await leaveConversation(currentConversation.id);
-            message.success(localStrings.Messages?.LeftConversation || 'You left the conversation');
+            message.success(localStrings.Messages.LeftConversation);
           }
         } catch (error) {
-          message.error(localStrings.Public?.Error || 'An error occurred');
+          message.error(localStrings.Public.Error);
         }
       }
     });
@@ -225,7 +225,7 @@ const MessagesFeature: React.FC = () => {
           <div style={{ padding: "16px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <Title level={4} style={{ margin: 0 }}>
-                {localStrings.Public.Messages || "Messages"}
+                {localStrings.Public.Messages}
               </Title>
               <div>
                 <Button 
@@ -237,7 +237,7 @@ const MessagesFeature: React.FC = () => {
               </div>
             </div>
             <Search
-              placeholder={localStrings.Public.Search || "Search"}
+              placeholder={localStrings.Public.Search}
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
               style={{ marginTop: 16 }}
@@ -312,7 +312,7 @@ const MessagesFeature: React.FC = () => {
                       icon={<PlusOutlined />}
                       onClick={() => setNewConversationModalVisible(true)}
                     >
-                      {localStrings.Messages.StartConversation || "Start a conversation"}
+                      {localStrings.Messages.StartConversation}
                     </Button>
                   </Empty>
                 ) : (
@@ -331,10 +331,10 @@ const MessagesFeature: React.FC = () => {
                       
                       const messagePreview = lastMessage?.content 
                         ? (lastMessage.content.length > 50 ? lastMessage.content.substring(0, 47) + '...' : lastMessage.content)
-                        : (localStrings.Messages?.StartConversation || "Start chatting");
+                        : (localStrings.Messages.StartConversation);
                       
                       const senderName = lastMessage?.user_id === user?.id 
-                        ? (localStrings.Messages?.You || "You") 
+                        ? (localStrings.Messages.You) 
                         : lastMessage?.user 
                           ? `${lastMessage.user.family_name || ''} ${lastMessage.user.name || ''}`.trim()
                           : '';
@@ -506,27 +506,27 @@ const MessagesFeature: React.FC = () => {
                         key="edit" 
                         onClick={() => setEditConversationModalVisible(true)}
                       >
-                        {localStrings.Messages?.EditConversation || "Edit Conversation Info"}
+                        {localStrings.Messages.EditConversation}
                       </Item>
                       <Item 
                         key="addMember" 
                         onClick={handleOpenAddMemberModal}
                       >
-                        {localStrings.Messages?.AddMembers || "Add Members"}
+                        {localStrings.Messages.AddMembers}
                       </Item>
                       <Item 
                         key="delete" 
                         danger 
                         onClick={() => currentConversation?.id && handleDeleteConversation(currentConversation.id)}
                       >
-                        {localStrings.Messages?.DeleteConversation || "Delete Conversation"}
+                        {localStrings.Messages.DeleteConversation}
                       </Item>
                       {(currentConversation?.name && !currentConversation.name.includes(" & ")) && (
                         <Item 
                           key="leave" 
                           onClick={handleLeaveConversation}
                         >
-                          {localStrings.Messages?.LeaveConversation || "Leave Conversation"}
+                          {localStrings.Messages.LeaveConversation}
                         </Item>
                       )}
                     </Menu>
@@ -545,7 +545,7 @@ const MessagesFeature: React.FC = () => {
                 <div style={{ textAlign: "center", opacity: 0.5 }}>
                   <div style={{ fontSize: 64, marginBottom: 20 }}>💬</div>
                   <Text type="secondary" style={{ fontSize: 16 }}>
-                    {localStrings.Messages?.SelectConversationToChat || "Select a conversation to start chatting"}
+                    {localStrings.Messages.SelectConversationToChat}
                   </Text>
                 </div>
               </div>
@@ -701,7 +701,7 @@ const MessagesFeature: React.FC = () => {
                           loading={messagesLoading}
                           disabled={messagesLoading}
                         >
-                          {localStrings.Public.LoadMore || "Load more"}
+                          {localStrings.Public.LoadMore}
                         </Button>
                       </div>
                     )}
@@ -740,7 +740,7 @@ const MessagesFeature: React.FC = () => {
                         </>
                       ) : initialMessagesLoaded ? (
                         <Empty
-                          description={localStrings.Messages.NoMessages || "No messages yet"}
+                          description={localStrings.Messages.NoMessages}
                           image={Empty.PRESENTED_IMAGE_SIMPLE}
                           style={{ marginTop: 40 }}
                         />
@@ -754,7 +754,7 @@ const MessagesFeature: React.FC = () => {
                 <div style={{ textAlign: "center", opacity: 0.5 }}>
                   <div style={{ fontSize: 64, marginBottom: 20 }}>💬</div>
                   <Text type="secondary" style={{ fontSize: 16 }}>
-                    {localStrings.Messages?.SelectConversationToChat || "Select a conversation to start chatting"}
+                    {localStrings.Messages.SelectConversationToChat}
                   </Text>
                 </div>
               </div>
@@ -796,14 +796,14 @@ const MessagesFeature: React.FC = () => {
                   </Popover>
                   
                   <Input
-                    placeholder={localStrings.Messages?.TypeMessage || "Type a message..."}
+                    placeholder={localStrings.Messages.TypeMessage}
                     value={messageText}
                     onChange={(e) => {
                       const newValue = e.target.value;
                       setMessageText(newValue);
                       // Hiển thị thông báo khi vượt quá 500 ký tự
                       if (newValue.length > 500 && messageText.length <= 500) {
-                        message.warning(localStrings.Messages?.MessageTooLong || "Message cannot exceed 500 characters");
+                        message.warning(localStrings.Messages.MessageTooLong);
                       }
                     }}
                     onKeyPress={handleKeyPress}

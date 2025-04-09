@@ -81,12 +81,12 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
     const isLt5M = file.size / 1024 / 1024 < 5;
     
     if (!isImage) {
-      message.error(localStrings.Messages.OnlyImageFiles || 'You can only upload image files!');
+      message.error(localStrings.Messages.OnlyImageFiles);
       return false;
     }
     
     if (!isLt5M) {
-      message.error(localStrings.Messages.ImageMustSmallerThan5M || 'Image must smaller than 5MB!');
+      message.error(localStrings.Messages.ImageMustSmallerThan5M);
       return false;
     }
     
@@ -167,11 +167,11 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
   return (
     <Modal
       open={visible}
-      title={localStrings.Messages.NewConversation || "New Conversation"}
+      title={localStrings.Messages.NewConversation}
       onCancel={onCancel}
       footer={[
         <Button key="cancel" onClick={onCancel}>
-          {localStrings.Public.Cancel || "Cancel"}
+          {localStrings.Public.Cancel}
         </Button>,
         <Button 
           key="create" 
@@ -180,30 +180,29 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
           loading={creating}
           disabled={selectedFriends.length === 0}
         >
-          {localStrings.Messages.Create || "Create"}
+          {localStrings.Messages.Create}
         </Button>
       ]}
     >
       <Form form={form} layout="vertical">
         <Form.Item 
           name="name" 
-          label={localStrings.Messages.ConversationName || "Conversation Name"}
+          label={localStrings.Messages.ConversationName}
         >
-          <Input placeholder={localStrings.Messages.OptionalGroupName || "Optional Group Name"} />
+          <Input placeholder={localStrings.Messages.OptionalGroupName} />
         </Form.Item>
         
         {/* Image Upload Section */}
         <Form.Item 
           name="image" 
-          label={localStrings.Messages.ConversationImage || "Conversation Image"}
+          label={localStrings.Messages.ConversationImage}
         >
           <Dragger
             name="avatar"
             multiple={false}
             showUploadList={false}
-            beforeUpload={() => false} // Ngăn chặn upload tự động
+            beforeUpload={() => false} 
             onChange={(info) => {
-              // Xử lý file khi người dùng chọn
               handleImageUpload(info);
             }}
             accept="image/*"
@@ -241,7 +240,7 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
                     background: 'rgba(255, 255, 255, 0.7)'
                   }}
                 >
-                  {localStrings.Messages.Remove || "Remove"}
+                  {localStrings.Messages.Remove}
                 </Button>
               </div>
             ) : (
@@ -250,10 +249,10 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
                   <InboxOutlined />
                 </p>
                 <p className="ant-upload-text">
-                  {localStrings.Messages.ClickOrDragImageToUpload || "Click or drag image to upload"}
+                  {localStrings.Messages.ClickOrDragImageToUpload}
                 </p>
                 <p className="ant-upload-hint">
-                  {localStrings.Messages.SupportSingleImageUpload || "Support for a single image upload (max 5MB)"}
+                  {localStrings.Messages.SupportSingleImageUpload}
                 </p>
               </div>
             )}
@@ -262,7 +261,7 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
         
         <div style={{ marginBottom: 16 }}>
           <label style={{ display: "block", marginBottom: 8 }}>
-            {localStrings.Public.Messages || "Select Friends"}
+            {localStrings.Public.Messages}
           </label>
           
           {loading ? (
@@ -309,7 +308,7 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
                   </div>
                 </List.Item>
               )}
-              locale={{ emptyText: localStrings.Messages.NoFriendsFound || "No friends found" }}
+              locale={{ emptyText: localStrings.Messages.NoFriendsFound}}
             />
           )}
         </div>

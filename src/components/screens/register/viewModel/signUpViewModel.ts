@@ -24,18 +24,24 @@ const SignUpViewModel = (repo: AuthenRepo) => {
         phone_number: data?.phone_number,
         birthday: (dayjs(data?.birthday, "DD/MM/YYYY").format('YYYY-MM-DDT00:00:00') + "Z").toString(),
         otp: data?.otp,
-      }
+      };
       const response = await repo.register(params);
       
       if (response && !response?.error) {
+        return true; // Trả về true để báo hiệu thành công
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error:", error);
-
+      if (error.response?.status === 400) {
+        const errorMessage = error.response?.data?.message;
+        throw new Error(errorMessage);
+      }
+      throw error;
     } finally {
       setLoading(false);
     }
   }; 
+
   // Kiểm tra gửi OTP 
   const verifyOTP = async (data: VerifyOTPRequestModel) => {
     try {
@@ -43,10 +49,15 @@ const SignUpViewModel = (repo: AuthenRepo) => {
       const response = await repo.verifyOTP(data);
 
       if (!response?.error) {
+        return true; // Trả về true để báo hiệu thành công
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-
+      if (error.response?.status === 400) {
+        const errorMessage = error.response?.data?.message;
+        throw new Error(errorMessage);
+      }
+      throw error;
     } finally {
       setOtpLoading(false);
     }

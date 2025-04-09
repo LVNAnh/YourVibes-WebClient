@@ -31,40 +31,50 @@ export default function Layout({ children }: { children: React.ReactNode }): Rea
     }
   };
 
-  // const connectWebSocket = () => {
-  //   const ws = new WebSocket(`${ApiPath.CONNECT_TO_WEBSOCKET}${user?.id}`);
+  const connectWebSocket = () => {
+    const ws = new WebSocket(`${ApiPath.CONNECT_TO_WEBSOCKET}${user?.id}`);
 
-  //   ws.onmessage = (e) => {
-  //     const message = JSON.parse(e.data);
-  //     // const { from: userName, content, notification_type: type } = notificationData;
-  //     // const {content, name: name, family_name: family_name} = message
-  //     const name = message?.user?.name
-  //     const family_name = message?.user?.family_name
-  //     const content = message?.content
+    ws.onmessage = (e) => {
+      const message = JSON.parse(e.data);
+      // const { from: userName, content, notification_type: type } = notificationData;
+      // const {content, name: name, family_name: family_name} = message
+      const name = message?.user?.name
+      const family_name = message?.user?.family_name
+      const content = message?.content
 
 
-  //     setStatusNotifi(true);
+      setStatusNotifi(true);
 
-  //     // const mappedType = mapNotifiCationContent(type);
+      // const mappedType = mapNotifiCationContent(type);
 
-  //     const key = `open${Date.now()}`;
+      const key = `open${Date.now()}`;
 
-  //     notification.open({
-  //       message: `${family_name} ${name}`,
-  //       description: content,
-  //       placement: "topRight",
-  //       key,
-  //     });
-  //   };
+      notification.open({
+        message: `${family_name} ${name}`,
+        description: content,
+        placement: "topRight",
+        key,
+      });
+    };
 
-  //   return () => {
-  //     ws.close();
-  //   };
-  // };
+    return () => {
+      ws.close();
+    };
+  };
+
+  useEffect(() => {
+    if (user?.id) {
+      const closeWebSocket = connectWebSocket();
+      { }
+      return () => {
+        closeWebSocket();
+      };
+    }
+  }, [user]);
 
   return (
     <Suspense fallback={<Skeleton paragraph={{ rows: 10 }} active />}>
-      <div className="overflow-hidden">
+      <div>
         <MainLayout>{children}</MainLayout>
       </div>
     </Suspense>

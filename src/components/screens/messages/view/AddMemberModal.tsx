@@ -59,7 +59,7 @@ const AddMemberModal: React.FC<AddMemberModalProps> = ({
       }
     } catch (error) {
       console.error("Error fetching friends:", error);
-      message.error(localStrings.Messages?.ErrorFetchingFriends || "Error fetching friends");
+      message.error(localStrings.Messages.ErrorFetchingFriends);
     } finally {
       setLoading(false);
     }
@@ -75,12 +75,12 @@ const AddMemberModal: React.FC<AddMemberModalProps> = ({
 
   const handleAddMembers = async () => {
     if (!conversationId) {
-      message.error(localStrings.Public?.Error || "Conversation not found");
+      message.error(localStrings.Public.Error);
       return;
     }
     
     if (selectedFriends.length === 0) {
-      message.warning(localStrings.Messages?.SelectAtLeastOneFriend || "Please select at least one friend");
+      message.warning(localStrings.Messages?.SelectAtLeastOneFriend);
       return;
     }
     
@@ -88,11 +88,11 @@ const AddMemberModal: React.FC<AddMemberModalProps> = ({
     
     try {
       await onAddMembers(selectedFriends);
-      message.success(localStrings.Messages.MembersAdded || "Members added successfully");
+      message.success(localStrings.Messages.MembersAdded);
       onCancel();
     } catch (error) {
       console.error("Error adding members:", error);
-      message.error(localStrings.Public?.Error || "Failed to add members");
+      message.error(localStrings.Public.Error);
     } finally {
       setAdding(false);
     }
@@ -101,17 +101,17 @@ const AddMemberModal: React.FC<AddMemberModalProps> = ({
   return (
     <Modal
       open={visible}
-      title={localStrings.Messages.AddMembers || "Add Members"}
+      title={localStrings.Messages.AddMembers}
       onCancel={onCancel}
-      okText={localStrings.Messages.Add || "Add"}
-      cancelText={localStrings.Public?.Cancel || "Cancel"}
+      okText={localStrings.Messages.Add}
+      cancelText={localStrings.Public.Cancel}
       onOk={handleAddMembers}
       confirmLoading={adding}
       okButtonProps={{ disabled: selectedFriends.length === 0 }}
     >
       <div style={{ marginBottom: 16 }}>
         <label style={{ display: "block", marginBottom: 8 }}>
-          {localStrings.Messages.SelectFriendsToAdd || "Select friends to add"}
+          {localStrings.Messages.SelectFriendsToAdd}
         </label>
         
         {loading ? (
@@ -158,7 +158,7 @@ const AddMemberModal: React.FC<AddMemberModalProps> = ({
                 </div>
               </List.Item>
             )}
-            locale={{ emptyText: localStrings.Messages.NoFriendsToAdd || "No friends to add" }}
+            locale={{ emptyText: localStrings.Messages.NoFriendsToAdd }}
           />
         )}
       </div>

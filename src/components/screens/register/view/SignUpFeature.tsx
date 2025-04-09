@@ -4,16 +4,18 @@ import { Button, Checkbox, DatePicker, Form, Input, message } from "antd";
 import { AuthenRepo } from "@/api/features/authenticate/AuthenRepo";
 import SignUpViewModel from "../viewModel/signUpViewModel";
 import { useAuth } from "@/context/auth/useAuth";
+import { useRouter } from "next/navigation"; // Thêm useRouter
 
 const SignUpFeature: React.FC = () => {
   const [form] = Form.useForm();
+  const router = useRouter(); // Khởi tạo router
   const repo = new AuthenRepo(); // Khởi tạo AuthenRepo
   const { handleSignUp, verifyOTP, loading, otpLoading } = SignUpViewModel(repo);
   const { language, localStrings } = useAuth();
 
   const onSignUp = async (values: any) => {
     try {
-      await handleSignUp({
+      const success = await handleSignUp({
         family_name: values.firstName,
         name: values.lastName,
         email: values.email,
@@ -22,9 +24,17 @@ const SignUpFeature: React.FC = () => {
         birthday: values.dob.format("DD/MM/YYYY"),
         otp: values.otp,
       });
-      message.success("Đăng ký thành công!");
-    } catch (error) {
-      message.error("Đăng ký thất bại. Vui lòng thử lại.");
+      if (success) {
+        message.success(`${localStrings.SignUp.SignUpSuccess}`);
+        router.push("/login"); // Chuyển hướng sang trang login
+      }
+    } catch (error: any) {
+      // Giữ xử lý lỗi 400
+      if (error.response?.status === 400) {
+        message.error(error.message);
+      } else {
+        message.error(`${localStrings.SignUp.SignUpFailed}`);
+      }
     }
   };
 
@@ -32,13 +42,18 @@ const SignUpFeature: React.FC = () => {
     try {
       const email = form.getFieldValue("email");
       if (!email) {
-        message.error("Vui lòng nhập email trước khi yêu cầu OTP!");
+        message.error(`${localStrings.Form.RequiredMessages.EmailRequiredMessage}`);
         return;
       }
       await verifyOTP({ email });
-      message.success("Gửi OTP thành công!");
-    } catch (error) {
-      message.error("Gửi OTP thất bại. Vui lòng thử lại.");
+      message.success(`${localStrings.SignUp.OTPSuccess}`);
+    } catch (error: any) {
+      // Giữ xử lý lỗi 400
+      if (error.response?.status === 400) {
+        message.error(error.message);
+      } else {
+        message.error(`${localStrings.SignUp.OTPFailed}`);
+      }
     }
   };
 
@@ -147,7 +162,6 @@ const SignUpFeature: React.FC = () => {
             <Input placeholder={localStrings.Form.Label.OTP} className="w-full" />
           </Form.Item>
 
-
           {/* Password */}
           <Form.Item
             name="password"
@@ -173,11 +187,9 @@ const SignUpFeature: React.FC = () => {
                   if (!value || getFieldValue("password") === value) {
                     return Promise.resolve();
                   }
-                  return Promise.reject(
-                    {
-                      message: localStrings.Form.RequiredMessages.ConfirmPasswordRequiredMessage
-                    }
-                  );
+                  return Promise.reject({
+                    message: localStrings.Form.RequiredMessages.ConfirmPasswordRequiredMessage,
+                  });
                 },
               }),
             ]}
@@ -194,14 +206,11 @@ const SignUpFeature: React.FC = () => {
                 validator: (_, value) =>
                   value
                     ? Promise.resolve()
-                    : Promise.reject(
-                      localStrings.Form.RequiredMessages.AgreeRequiredMessage),
+                    : Promise.reject(localStrings.Form.RequiredMessages.AgreeRequiredMessage),
               },
             ]}
           >
-            <Checkbox>
-              {localStrings.SignUp.AgreePolicies}
-            </Checkbox>
+            <Checkbox>{localStrings.SignUp.AgreePolicies}</Checkbox>
           </Form.Item>
 
           {/* Submit Button */}

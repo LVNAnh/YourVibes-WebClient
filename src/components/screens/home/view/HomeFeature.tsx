@@ -1,5 +1,5 @@
 "use client";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import useColor from "@/hooks/useColor";
 import Post from "@/components/common/post/views/Post";
 import HomeViewModel from "../viewModel/HomeViewModel";
@@ -13,13 +13,16 @@ import { LoadingOutlined } from '@ant-design/icons';
 import InfiniteScroll from "react-infinite-scroll-component";
 import FriendSuggestions from "@/components/common/Suggestions/friendSuggestions";
 
-const Homepage = ({ friendSuggestions }: any) => {
+const Homepage = ({ }: any) => {
   const { brandPrimary, backgroundColor, lightGray } = useColor();
   const { loading, newFeeds, setNewFeeds, fetchNewFeeds, loadMoreNewFeeds, deleteNewFeed, hasMore } = HomeViewModel(defaultNewFeedRepo);
   const { user, localStrings } = useAuth();
   const router = useRouter();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const { friends, fetchMyFriends, page } = ProfileViewModel();
+  const [isDragging, setIsDragging] = useState(false);
+  const [startY, setStartY] = useState(0);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (user) {
@@ -52,6 +55,7 @@ const Homepage = ({ friendSuggestions }: any) => {
             cursor: "pointer",
             width: "100%",
             maxWidth: "600px",
+            position: "relative",  
           }}
         >
           <Avatar
@@ -60,9 +64,31 @@ const Homepage = ({ friendSuggestions }: any) => {
             size={{ xs: 40, sm: 40, md: 50, lg: 50, xl: 50, xxl: 50 }}
           />
           <div style={{ marginLeft: "10px", flex: 1 }}>
-            <p><b>{user?.family_name + " " + user?.name || localStrings.Public.Username}</b></p>
+            <p>
+              <b>{user?.family_name + " " + user?.name || localStrings.Public.Username}</b>
+            </p>
             <p style={{ color: "gray" }}>{localStrings.Public.Today}</p>
-          </div>
+          </div> 
+          <span
+            style={{
+              position: "absolute",
+              right: "10px",
+              fontSize: "24px",
+              fontWeight: "bold",
+              color: brandPrimary || "#1890ff",  
+              backgroundColor: "rgba(255, 255, 255, 0.9)", 
+              padding: "5px",
+              borderRadius: "50%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: "30px",
+              height: "30px",
+              boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",  
+            }}
+          >
+            +
+          </span>
         </div>
         <Modal
           centered
@@ -89,44 +115,70 @@ const Homepage = ({ friendSuggestions }: any) => {
         backgroundColor: "rgb(244, 244, 244)",
         borderRadius: '8px',
       }}>
-          <span className="font-bold text-lg">
-                        {localStrings.Public.Friend}
-                      </span>
-            <hr className="border-t-1 border-gray-400" />
+        <span className="font-bold text-lg">
+          {localStrings.Public.Friend}
+        </span>
+        <hr className="border-t-1 border-gray-400" />
         {friends.map((user) => (
           <div>
 
-          <div
-            key={user.id}
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: 10,
-              borderBottom: "1px solid #f0f0f0",
-              cursor: "pointer",
-            }}
-            onClick={() => router.push(`/user/${user?.id}`)}
-          >
-            <div style={{ display: "flex", alignItems: "center" }}>
-              <Avatar
-                src={user.avatar_url}
-                alt={user.name}
-                size={40}
-              />
-              <span style={{ marginLeft: 10, fontWeight: "bold", fontSize: 16 }}>
-                {user.family_name + " " + user.name}
-              </span>
+            <div
+              key={user.id}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                padding: 10,
+                borderBottom: "1px solid #f0f0f0",
+                cursor: "pointer",
+              }}
+              onClick={() => router.push(`/user/${user?.id}`)}
+            >
+              <div style={{ display: "flex", alignItems: "center" }}>
+                <Avatar
+                  src={user.avatar_url}
+                  alt={user.name}
+                  size={40}
+                />
+                <span style={{ marginLeft: 10, fontWeight: "bold", fontSize: 16 }}>
+                  {user.family_name + " " + user.name}
+                </span>
+              </div>
             </div>
-          </div>
-          <hr className="border-t-1 border-gray-300" />
+            <hr className="border-t-1 border-gray-300" />
           </div>
         ))}
       </div>
     );
   };
 
+  const handleMouseDown = (event: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
+    setIsDragging(true);
+    setStartY(event.clientY);
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+    setStartY(0);
+  };
+
+  const handleMouseMove = (event: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
+    if (isDragging && scrollContainerRef.current) {
+      const deltaY = event.clientY - startY;
+      if (deltaY > 100) {
+        fetchNewFeeds();
+        setStartY(event.clientY);
+      }
+    }
+  };
+
   return (
-    <div className="lg:flex mt-4 ">
+    <div className="lg:flex mt-4 "
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+      onMouseMove={handleMouseMove}
+      ref={scrollContainerRef}
+    >
       {/* Content */}
       {loading ? (
         <div className="flex-auto w-auto flex items-center justify-center">
@@ -147,13 +199,12 @@ const Homepage = ({ friendSuggestions }: any) => {
                 >
                   {newFeeds.map((item, index) => (
                     <div key={item?.id} style={{ width: "100%", maxWidth: "600px" }}>
-                      <Post post={item} onDeleteNewFeed={handleDeleteNewFeed} />
-                      {item?.parent_post && (
-                        <div style={{ marginLeft: "20px" }}>
+                      <Post post={item} onDeleteNewFeed={handleDeleteNewFeed}>
+                        {item?.parent_post &&
                           <Post post={item?.parent_post} isParentPost />
-                        </div>
-                      )}
-                      {index === 4 && <FriendSuggestions friendSuggestions={friendSuggestions} postIndex={index} />}
+                        }
+                      </Post>
+                      {index === 4 && <FriendSuggestions postIndex={index} />}
                     </div>
                   ))}
                 </InfiniteScroll>
@@ -166,7 +217,7 @@ const Homepage = ({ friendSuggestions }: any) => {
                   } />
                 </div>
               )}
-            </div> 
+            </div>
           </div>
           <div className="flex-initial w-[320px] hidden xl:block">
             {renderFriends()}

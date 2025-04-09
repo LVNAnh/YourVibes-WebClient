@@ -1,10 +1,8 @@
-
 import { ApiPath } from "../../ApiPath";
 import { BaseApiResponseModel } from "../../baseApiResponseModel/baseApiResponseModel";
 import client from "../../client";
 import { UserModel } from "../authenticate/model/LoginModel";
 import { UpdateProfileRequestModel } from "./model/UpdateProfileModel";
-import { ReportUserRequestModel } from "./model/ReportUser";
 import { GetFriendRequestModel } from "./model/GetFriendModel";
 import { FriendResponseModel, } from "./model/FriendReponseModel";
 import { TransferToFormData } from "@/utils/helper/TransferToFormData";
@@ -44,9 +42,6 @@ export class ProfileRepo implements IProfileRepo {
   }
   async unfriend(userId: string): Promise<BaseApiResponseModel<any>> {
     return client.delete(ApiPath.UNFRIEND + userId);
-  }
-  async reportUser(params: ReportUserRequestModel): Promise<BaseApiResponseModel<any>> {
-    return client.post(ApiPath.REPORT_USER, params);
   }
   async getListFriends(data: GetFriendRequestModel): Promise<BaseApiResponseModel<FriendResponseModel>> {
     return client.get(ApiPath.LIST_FRIENDS + data.user_id, data);

@@ -3,7 +3,7 @@
 import React, { Suspense, useEffect, useState } from "react";
 import { Skeleton } from "antd";
 import dynamic from 'next/dynamic';
-import { WebSocketProvider } from "@/context/websocket/useWebSocket";
+import { WebSocketMessageProvider } from "@/context/websocket/useWebSocket";
 
 const DynamicMessagesFeature = dynamic(
   () => import('@/components/screens/messages/view/MessagesFeature'),
@@ -26,11 +26,11 @@ export default function MessagesPage() {
 
   return (
     <div className="h-full overflow-hidden">
-      <WebSocketProvider>
+      <WebSocketMessageProvider>
         <Suspense fallback={<Skeleton paragraph={{ rows: 10 }} active />}>
           <DynamicMessagesFeature />
         </Suspense>
-      </WebSocketProvider>
+      </WebSocketMessageProvider>
     </div>
   );
 }

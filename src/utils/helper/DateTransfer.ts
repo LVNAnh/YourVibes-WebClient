@@ -24,3 +24,9 @@ export const getTimeDiff = (date?: string, localString?: any) => {
 export const getDayDiff = (date: Date) => {
   return Math.round(dayjs(date).diff(dayjs(), 'day', true));
 }
+
+export const getDayDiffAds = (selectedDate: Date) => {
+  const today = dayjs().startOf('day'); 
+  const targetDate = dayjs(selectedDate).startOf('day');
+  return targetDate.diff(today, 'day'); 
+};

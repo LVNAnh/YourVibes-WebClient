@@ -5,7 +5,7 @@ export interface GetUsersPostsRequestModel {
   title?: string
   content?: string
   location?: string
-  is_advertisement?: boolean
+  is_advertisement?: number
   created_at?: string
   sort_by?: keyof PostResponseModel
   isDescending?: boolean

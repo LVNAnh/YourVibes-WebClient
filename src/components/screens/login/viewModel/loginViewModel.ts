@@ -2,36 +2,56 @@ import { AuthenRepo } from "@/api/features/authenticate/AuthenRepo";
 import { LoginRequestModel } from "@/api/features/authenticate/model/LoginModel";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/context/auth/useAuth";
-import { useSearchParams } from "next/navigation";
-import { message } from "antd";
+import { useSearchParams } from "next/navigation"; 
+
+interface LoginObserver {
+  onLoginStateChanged: (isLoading: boolean, error?: string) => void;
+  onLoginSuccess: (data: any) => void;
+}
 
 const LoginViewModel = (repo: AuthenRepo) => {
   const { onLogin, localStrings } = useAuth();
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [observers] = useState<LoginObserver[]>([]);
 
-  const code = useMemo(() =>
-    searchParams.get("code"),
-    [searchParams, searchParams.get("code")]
-  );
+  const addObserver = (observer: LoginObserver) => {
+    observers.push(observer);
+  };
 
-  const error = useMemo(() =>
-    searchParams.get("error"),
-    [searchParams, searchParams.get("error")]
-  );
+  const removeObserver = (observer: LoginObserver) => {
+    const index = observers.indexOf(observer);
+    if (index !== -1) {
+      observers.splice(index, 1);
+    }
+  };
+
+  const notifyLoading = (isLoading: boolean, error?: string) => {
+    observers.forEach(observer => observer.onLoginStateChanged(isLoading, error));
+  };
+
+  const notifySuccess = (data: any) => {
+    observers.forEach(observer => observer.onLoginSuccess(data));
+  };
+
+  const code = useMemo(() => searchParams.get("code"), [searchParams]);
+  const error = useMemo(() => searchParams.get("error"), [searchParams]);
 
   const login = async (data: LoginRequestModel) => {
     try {
       setLoading(true);
+      notifyLoading(true);
       const res = await repo.login(data);
       if (res?.data) {
-        onLogin(res.data); // Gọi onLogin từ useAuth
-      } else { 
-        message.error(localStrings.Login.LoginFailed);
+        onLogin(res.data);
+        notifyLoading(false);
+        notifySuccess(res.data);
+      } else {
+        notifyLoading(false, localStrings.Login.LoginFailed);
       }
     } catch (error: any) {
-      message.error(localStrings.Login.LoginFailed);
+      notifyLoading(false, localStrings.Login.LoginFailed);
     } finally {
       setLoading(false);
     }
@@ -45,20 +65,23 @@ const LoginViewModel = (repo: AuthenRepo) => {
   const handleGoogleLogin = async (code: string) => {
     try {
       setGoogleLoading(true);
-      const res = await repo.googleLogin({ 
-        authorization_code: code, 
-        platform: "web" ,
-        redirect_url: `${window.location.origin}/login`
+      notifyLoading(true);  
+      const res = await repo.googleLogin({
+        authorization_code: code,
+        platform: "web",
+        redirect_url: `${window.location.origin}/login`,
       });
       if (res?.data) {
         onLogin(res.data);
-      } else { 
-        message.error(localStrings.Login.LoginFailed);
+        notifyLoading(false);
+        notifySuccess(res.data);
+      } else {
+        notifyLoading(false, localStrings.Login.LoginFailed);
       }
-    } catch (error: any) { 
-      message.error(localStrings.Login.LoginFailed);
+    } catch (error: any) {
+      notifyLoading(false, localStrings.Login.LoginFailed);
     } finally {
-      setGoogleLoading(false);
+      setGoogleLoading(false); 
     }
   };
 
@@ -70,7 +93,7 @@ const LoginViewModel = (repo: AuthenRepo) => {
 
   useEffect(() => {
     if (error) {
-      message.error(localStrings.Login.LoginFailed);
+      notifyLoading(false, localStrings.Login.LoginFailed);
     }
   }, [error]);
 
@@ -79,6 +102,8 @@ const LoginViewModel = (repo: AuthenRepo) => {
     loading,
     getGoogleLoginUrl,
     googleLoading,
+    addObserver,
+    removeObserver,
   };
 };
 

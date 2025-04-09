@@ -2,6 +2,7 @@ import axios from "axios";
 import { BaseApiResponseModel } from "../baseApiResponseModel/baseApiResponseModel";
 import IApiClient from "./IApiClient";
 import ModelConverter from "@/utils/modelConvert/ModelConverter";
+import { Modal } from "antd";
 // import curlirize from 'axios-curlirize';
 
 const api = axios.create({
@@ -34,7 +35,18 @@ api.interceptors.response.use(
     return response?.data;
   },
   (error) => {
-    console.error(error)
+    console.error("Response error:",error);
+    error.response || error;
+    if (error?.response?.status === 401 || error?.response?.status === 403) {
+      Modal.error({
+        title: "Session expired",
+        content: "Your session has expired. Please log in again.",
+        onOk() {
+          localStorage.removeItem("accesstoken");
+          window.location.href = "/login";
+        },
+      });
+    }
     return Promise.resolve(error?.response?.data);
   }
 );

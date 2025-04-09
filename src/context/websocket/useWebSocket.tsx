@@ -9,7 +9,7 @@ import { WebSocketContextType } from './webSocketContextType';
 
 const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined);
 
-export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
+export const WebSocketMessageProvider = ({ children }: { children: ReactNode }) => {
   const { user } = useAuth();
   const [isConnected, setIsConnected] = useState(false);
   const [lastMessages, setLastMessages] = useState<Record<string, MessageResponseModel[]>>({});

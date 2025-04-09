@@ -1,4 +1,4 @@
-"use client"; // Đảm bảo rằng đây là một client-side component
+"use client";
 
 import React, { use, useState } from "react";
 import { Layout, Menu, Input, Grid, ConfigProvider, Modal, Avatar } from "antd";
@@ -13,7 +13,7 @@ import {
   FaBuysellads,
 } from "react-icons/fa";
 import { useAuth } from "@/context/auth/useAuth";
-import { usePathname, useRouter, useSearchParams } from "next/navigation"; // Sử dụng `next/navigation` thay vì `next/router`
+import { usePathname, useRouter, useSearchParams } from "next/navigation"; 
 import SearchScreen from "@/components/screens/search/views/SearchScreen";
 import { Content, Footer, Header } from "antd/es/layout/layout";
 import Sider from "antd/es/layout/Sider";
@@ -21,6 +21,7 @@ import useColor from "@/hooks/useColor";
 import { IoMenu } from "react-icons/io5";
 import SettingsTab from "@/components/screens/profile/components/SettingTabs";
 import NotificationScreen from "@/components/screens/notification/views/Notification";
+import { icons } from "antd/es/image/PreviewGroup";
 
 const { useBreakpoint } = Grid;
 const siderStyle: React.CSSProperties = {
@@ -72,12 +73,13 @@ const MainLayout = ({ children }: { children: React.ReactNode }) => {
         link:"/adsManagement",
         content: localStrings.Ads.AdsManagement,
         icon: FaAd,
-      },
+      }, 
       {
         link: "/settings",
         content: localStrings.Public.Settings,
         icon: FaCog,
-      },
+      }, 
+      
     ],
   };
 
@@ -89,7 +91,6 @@ const MainLayout = ({ children }: { children: React.ReactNode }) => {
 
     if (pathname !== basePath) return false;
 
-    // So sánh từng query parameter trong link với `useSearchParams`
     for (const [key, value] of linkParams.entries()) {
       if (searchParams.get(key) !== value) return false;
     }
@@ -101,16 +102,15 @@ const MainLayout = ({ children }: { children: React.ReactNode }) => {
     setVisible(!visible);
   };
 
-  // Cập nhật lại hàm handleItemClick
   const handleItemClick = (link: string) => {
     if (link === "/settings") {
       setSettingModal(true);
     } else if (link === "/notifications") {
       setNotificationModal(true);
     } else {
-      router.push(link); // Chuyển trang khi nhấn vào menu item
+      router.push(link); 
     }
-    setVisible(false); // Đóng menu khi nhấn vào item
+    setVisible(false); 
   };
 
   return (
@@ -134,7 +134,6 @@ const MainLayout = ({ children }: { children: React.ReactNode }) => {
             display: "flex",
             alignItems: "center",
             gap: "10px",
-            // border: "1px solid #000000",
           }}
         >
           <img
@@ -146,7 +145,7 @@ const MainLayout = ({ children }: { children: React.ReactNode }) => {
           <SearchScreen />
         </div>
         <div
-          className="flex flex-row items-center gap-4"
+          className="flex flex-row items-center gap-4 pl-2"
           onClick={handleMenuClick}
         >
           <span className="font-bold md:block hidden">
@@ -189,6 +188,7 @@ const MainLayout = ({ children }: { children: React.ReactNode }) => {
                     // itemPaddingInline: 0,
                     itemHeight: 55,
                   }
+
                 },
               }}
             >
@@ -235,6 +235,7 @@ const MainLayout = ({ children }: { children: React.ReactNode }) => {
               />
             </ConfigProvider>
           </Sider>
+          
           <Content
             style={{
               marginLeft: screens.lg ? 250 : 0,

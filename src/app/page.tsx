@@ -10,11 +10,11 @@ const Page = () => {
 
   useEffect(() => {
     if (isAuthenticated) {
-      router.push('/home'); // Điều hướng đến trang chính nếu đã đăng nhập
+      router.push('/home');  
     } else {
-      router.push('/login'); // Điều hướng đến trang login nếu chưa đăng nhập
+      router.push('/login');  
     }
-  }, [isAuthenticated, router]); // Chỉ chạy khi trạng thái xác thực hoặc router thay đổi
+  }, [isAuthenticated, router]);  
 
   return (
     <div className="w-screen h-screen flex justify-center items-center bg-white">

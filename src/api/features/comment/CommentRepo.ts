@@ -4,7 +4,6 @@ import client from "../../client";
 import { CommentsResponseModel } from "./models/CommentResponseModel";
 import { CreateCommentsRequestModel } from "./models/CreateCommentsModel";
 import { GetCommentsRequestModel } from "./models/GetCommentsModel";
-import { ReportCommentRequestModel } from "./models/ReportComment";
 import { UpdateCommentsRequestModel } from "./models/UpdateCommentsModel";
 
 interface ICommentRepo {
@@ -51,10 +50,6 @@ export class CommentRepo implements ICommentRepo {
 
         return client.get(`${ApiPath.GET_COMMENTS}?${queryParams}`); 
     }  
-
-    async reportComment(params: ReportCommentRequestModel): Promise<BaseApiResponseModel<any>> {
-        return client.post(ApiPath.REPORT_COMMENT, params);
-    }
 }
 
 export const defaultCommentRepo = new CommentRepo();

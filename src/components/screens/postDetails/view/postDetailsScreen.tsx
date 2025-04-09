@@ -1,6 +1,8 @@
+"use client";
+
 import React, { useEffect, useRef, useState } from "react";
 import Post from "@/components/common/post/views/Post";
-import { Avatar, Button, Col, Row, Typography } from "antd";
+import { Avatar, Button, Col, Row, Typography, Modal } from "antd";
 import {
   FaEdit,
   FaHeart,
@@ -15,7 +17,6 @@ import useColor from "@/hooks/useColor";
 import { PostResponseModel } from "@/api/features/post/models/PostResponseModel";
 import { defaultPostRepo } from "@/api/features/post/PostRepo";
 import ReportViewModel from "@/components/screens/report/ViewModel/reportViewModel";
-import { Modal } from "antd";
 import ReportScreen from "../../report/views/Report";
 import EmojiPicker from "emoji-picker-react";
 import { useRouter } from "next/navigation";
@@ -29,10 +30,7 @@ interface CommentsScreenProps {
 const { brandPrimaryTap } = useColor();
 const { Text } = Typography;
 
-const PostDetailsScreen: React.FC<CommentsScreenProps> = ({
-  postId,
-  isModal,
-}) => {
+const PostDetailsScreen: React.FC<CommentsScreenProps> = ({ postId, isModal }) => {
   const {
     comments,
     replyMap,
@@ -68,19 +66,13 @@ const PostDetailsScreen: React.FC<CommentsScreenProps> = ({
   const [post, setPost] = useState<PostResponseModel | null>(null);
   const [loading, setLoading] = useState(false);
   const { localStrings } = useAuth();
-  const [selectedCommentId, setSelectedCommentId] = useState<string | null>(
-    null
-  );
+  const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null);
   const [isReplyModalVisible, setReplyModalVisible] = useState(false);
   const { user } = useAuth();
   const userId = user?.id;
   const router = useRouter();
   const { showModal, setShowModal } = ReportViewModel();
   const [currentCommentId, setCurrentCommentId] = useState<string>("");
-  const reportComment = (commentId: string) => {
-    setCurrentCommentId(commentId);
-    setShowModal(true);
-  };
   const [editCommnetId, setEditCommentId] = useState<string>("");
 
   const [showEmojiPicker, setShowEmojiPicker] = useState({
@@ -92,6 +84,11 @@ const PostDetailsScreen: React.FC<CommentsScreenProps> = ({
   const emojiPickerRefComment = useRef(null);
   const emojiPickerRefEditComment = useRef(null);
 
+  const isContentLengthValid = (content: string) => {
+    const contentLength = content.trim().length;
+    return contentLength >= 2 && contentLength <= 500;
+  };
+
   const handleEmojiClick = (emojiObject: any) => {
     setNewComment((prevComment) => prevComment + emojiObject.emoji);
   };
@@ -99,9 +96,11 @@ const PostDetailsScreen: React.FC<CommentsScreenProps> = ({
   const handleEmojiClickReply = (emojiObject: any) => {
     setReplyContent((prevComment) => prevComment + emojiObject.emoji);
   };
+
   const handleEmojiClickEdit = (emojiObject: any) => {
     setEditCommentContent((prevComment) => prevComment + emojiObject.emoji);
   };
+
   const fetchPost = async (postId: string) => {
     try {
       setLoading(true);
@@ -134,79 +133,66 @@ const PostDetailsScreen: React.FC<CommentsScreenProps> = ({
     if (
       showEmojiPicker.reply &&
       emojiPickerRefReply.current &&
-      !(emojiPickerRefReply.current as HTMLElement).contains(
-        event.target as Node
-      )
+      !(emojiPickerRefReply.current as HTMLElement).contains(event.target as Node)
     ) {
       setShowEmojiPicker((prev) => ({ ...prev, reply: false }));
     }
     if (
       showEmojiPicker.comment &&
       emojiPickerRefComment.current &&
-      !(emojiPickerRefComment.current as HTMLElement).contains(
-        event.target as Node
-      )
+      !(emojiPickerRefComment.current as HTMLElement).contains(event.target as Node)
     ) {
       setShowEmojiPicker((prev) => ({ ...prev, comment: false }));
     }
     if (
       showEmojiPicker.editCommet &&
       emojiPickerRefEditComment.current &&
-      !(emojiPickerRefEditComment.current as HTMLElement).contains(
-        event.target as Node
-      )
+      !(emojiPickerRefEditComment.current as HTMLElement).contains(event.target as Node)
     ) {
       setShowEmojiPicker((prev) => ({ ...prev, editCommet: false }));
     }
   };
 
   useEffect(() => {
-    if (
-      showEmojiPicker.reply ||
-      showEmojiPicker.comment ||
-      showEmojiPicker.editCommet
-    ) {
+    if (showEmojiPicker.reply || showEmojiPicker.comment || showEmojiPicker.editCommet) {
       document.addEventListener("mousedown", handleClickOutside);
     } else {
       document.removeEventListener("mousedown", handleClickOutside);
     }
-
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [showEmojiPicker]);
 
+  const reportComment = (commentId: string) => {
+    setCurrentCommentId(commentId);
+    setShowModal(true);
+  };
+
   return (
     <div className="p-2.5">
       {isModal === false && (
         <div className="mb-2 flex items-center">
-          <Button
-            icon={<FaArrowLeft />}
-            type="text"
-            onClick={() => router.back()}
-          />
+          <Button icon={<FaArrowLeft />} type="text" onClick={() => router.back()} />
           <Text strong style={{ fontSize: "18px", marginLeft: "10px" }}>
             {localStrings.Public.Post}
           </Text>
         </div>
       )}
       <div className="container mx-auto flex flex-col xl:flex-row gap-6">
-        {/* Cột hiển thị bài viết */}
         <div className="post-container flex-1 bg-white p-6 rounded-lg shadow-md">
           <Post noComment={true} post={post || undefined}>
-            {post?.parent_post && (
-              <Post post={post?.parent_post} isParentPost />
-            )}
+            {post?.parent_post && <Post post={post?.parent_post} isParentPost />}
           </Post>
         </div>
-
-        {/* Cột hiển thị bình luận */}
         <div className="comments-container flex-1 bg-white p-6 rounded-lg shadow-md">
           <span className="text-lg font-semibold text-gray-800">
             {localStrings.Public.Comment}
           </span>
-          {/* Danh sách bình luận */}
-          <div className="comments-list space-y-6 max-h-[70vh] overflow-y-auto" style={{ scrollbarWidth: "none" }}>
+          <div
+            className="comments-list space-y-6 max-h-[70vh] overflow-y-auto"
+            style={{ scrollbarWidth: "none" }}
+          >
             {comments.map((comment) => (
               <CommentItem
                 key={comment.id}
@@ -215,7 +201,10 @@ const PostDetailsScreen: React.FC<CommentsScreenProps> = ({
                 heartColors={heartColors}
                 handleLike={handleLike}
                 handleDelete={handleDelete}
-                handleShowEditModal={handleShowEditModal}
+                handleShowEditModal={(commentId, content) => {
+                  handleShowEditModal(commentId, content);
+                  setEditCommentId(commentId);
+                }}
                 handleReplyClick={handleReplyClick}
                 fetchReplies={fetchReplies}
                 fetchComments={fetchComments}
@@ -227,13 +216,11 @@ const PostDetailsScreen: React.FC<CommentsScreenProps> = ({
                 setReplyModalVisible={setReplyModalVisible}
                 setSelectedCommentId={setSelectedCommentId}
                 postId={postId || ""}
+                likeCount={likeCount[comment.id] || 0}
               />
             ))}
           </div>
-
-          {/* Phản hồi đến bình luận */}
           <div className="add-comment mt-2">
-            {/* Container của textarea và emoji button */}
             <div className="relative">
               <textarea
                 className="comment-input w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm pr-10"
@@ -245,22 +232,22 @@ const PostDetailsScreen: React.FC<CommentsScreenProps> = ({
                 value={newComment}
                 onChange={handleTextChange}
               />
-              {/* Nút Emoji nằm trong góc dưới phải của textarea */}
+              <Text
+                type={newComment.length > 500 ? "danger" : "secondary"}
+                style={{ float: "right", marginTop: 4 }}
+              >
+                {newComment.length}/{localStrings.PostDetails.CommentLimit}
+              </Text>
               <button
                 type="button"
                 onClick={() =>
-                  setShowEmojiPicker((prev) => ({
-                    ...prev,
-                    comment: !prev.comment,
-                  }))
+                  setShowEmojiPicker((prev) => ({ ...prev, comment: !prev.comment }))
                 }
                 className="absolute right-3 top-4 text-lg bg-gray-200 rounded-full hover:bg-gray-300 p-1"
               >
                 😊
               </button>
             </div>
-
-            {/* Emoji Picker */}
             {showEmojiPicker.comment && (
               <div
                 ref={emojiPickerRefComment}
@@ -273,16 +260,15 @@ const PostDetailsScreen: React.FC<CommentsScreenProps> = ({
                 />
               </div>
             )}
-
             <button
               onClick={handlePostAction}
               className="post-btn mt-4 w-full bg-gray-600 text-white py-2 rounded-lg hover:bg-gray-800"
+              disabled={!isContentLengthValid(newComment)}
             >
               {localStrings.Public.Comment ||
                 (replyToCommentId || replyToReplyId ? "Reply" : "Post")}
             </button>
           </div>
-          {/*Modal Reply*/}
           {isReplyModalVisible && (
             <Modal
               title={`${localStrings.Public.Reply}`}
@@ -290,16 +276,22 @@ const PostDetailsScreen: React.FC<CommentsScreenProps> = ({
               visible={isReplyModalVisible}
               onCancel={() => setReplyModalVisible(false)}
               onOk={() => {
-                handlePostAction();
-                setReplyModalVisible(false);
-                setVisibleReplies((prev) => ({
-                  ...prev,
-                  ...Object.keys(prev).reduce(
-                    (acc, key) => ({ ...acc, [key]: true }),
-                    {}
-                  ),
-                }));
+                if (isContentLengthValid(replyContent)) {
+                  handlePostAction();
+                  setReplyModalVisible(false);
+                  setVisibleReplies((prev) => ({
+                    ...prev,
+                    ...Object.keys(prev).reduce(
+                      (acc, key) => ({ ...acc, [key]: true }),
+                      {}
+                    ),
+                  }));
+                }
               }}
+              cancelText={localStrings.Public.Cancel}
+              okText={localStrings.Public.Reply}
+              okButtonProps={{ disabled: !isContentLengthValid(replyContent) }}
+              styles={{ body: { padding: "16px" } }} 
             >
               <div className="relative">
                 <textarea
@@ -309,30 +301,29 @@ const PostDetailsScreen: React.FC<CommentsScreenProps> = ({
                   onChange={(e) => setReplyContent(e.target.value)}
                   style={{ border: "0.5px solid gray", width: "100%" }}
                 />
-                {/* Nút Emoji nằm trong góc dưới phải của textarea */}
+                <Text
+                  type={replyContent.length > 500 ? "danger" : "secondary"}
+                  style={{ float: "right", marginTop: 4 }}
+                >
+                  {replyContent.length}/{localStrings.PostDetails.CommentLimit}
+                </Text>
                 <button
                   type="button"
                   onClick={() =>
-                    setShowEmojiPicker((prev) => ({
-                      ...prev,
-                      reply: !prev.reply,
-                    }))
+                    setShowEmojiPicker((prev) => ({ ...prev, reply: !prev.reply }))
                   }
                   className="absolute right-3 top-4 text-lg bg-gray-200 rounded-full hover:bg-gray-300 p-1"
                 >
                   😊
                 </button>
               </div>
-              {/* Emoji Picker */}
               {showEmojiPicker.reply && (
                 <div
                   ref={emojiPickerRefReply}
                   className="absolute left-5 z-10 bg-white border border-gray-300 rounded-lg shadow-md"
                 >
                   <EmojiPicker
-                    onEmojiClick={(emojiObject) =>
-                      handleEmojiClickReply(emojiObject)
-                    }
+                    onEmojiClick={(emojiObject) => handleEmojiClickReply(emojiObject)}
                     width={400}
                     height={320}
                   />
@@ -340,8 +331,6 @@ const PostDetailsScreen: React.FC<CommentsScreenProps> = ({
               )}
             </Modal>
           )}
-
-          {/* Modal Edit */}
           {isEditModalVisible && (
             <Modal
               title={`${localStrings.PostDetails.EditComment}`}
@@ -349,14 +338,13 @@ const PostDetailsScreen: React.FC<CommentsScreenProps> = ({
               visible={isEditModalVisible}
               onCancel={() => setEditModalVisible(false)}
               onOk={() => {
-                handleUpdate(
-                  editCommnetId,
-                  editCommentContent,
-                  replyToCommentId || ""
-                );
-                setEditModalVisible(false);
-                console.log("Edit", editCommnetId, editCommentContent);
+                if (isContentLengthValid(editCommentContent)) {
+                  handleUpdate(editCommnetId, editCommentContent, replyToCommentId || "");
+                  setEditModalVisible(false);
+                }
               }}
+              okButtonProps={{ disabled: !isContentLengthValid(editCommentContent) }}
+              styles={{ body: { padding: "16px" } }}
             >
               <div className="relative">
                 <textarea
@@ -365,7 +353,12 @@ const PostDetailsScreen: React.FC<CommentsScreenProps> = ({
                   onChange={(e) => setEditCommentContent(e.target.value)}
                   style={{ border: "1px solid gray", width: "100%" }}
                 />
-                {/* Nút Emoji nằm trong góc dưới phải của textarea */}
+                <Text
+                  type={editCommentContent.length > 500 ? "danger" : "secondary"}
+                  style={{ float: "right", marginTop: 4 }}
+                >
+                  {editCommentContent.length}/{localStrings.PostDetails.CommentLimit}
+                </Text>
                 <button
                   type="button"
                   onClick={() =>
@@ -385,9 +378,7 @@ const PostDetailsScreen: React.FC<CommentsScreenProps> = ({
                   className="absolute left-5 z-10 bg-white border border-gray-300 rounded-lg shadow-md"
                 >
                   <EmojiPicker
-                    onEmojiClick={(emojiObject) =>
-                      handleEmojiClickEdit(emojiObject)
-                    }
+                    onEmojiClick={(emojiObject) => handleEmojiClickEdit(emojiObject)}
                     width={400}
                     height={320}
                   />
@@ -395,18 +386,15 @@ const PostDetailsScreen: React.FC<CommentsScreenProps> = ({
               )}
             </Modal>
           )}
-          {/* Modal hiển thị khi nhấn FaFlag */}
           <Modal
             centered
             title={localStrings.Public.ReportFriend}
             open={showModal}
             onCancel={() => setShowModal(false)}
             footer={null}
+            styles={{ body: { padding: "16px" } }} 
           >
-            <ReportScreen
-              commentId={currentCommentId}
-              setShowModal={setShowModal}
-            />
+            <ReportScreen commentId={currentCommentId} setShowModal={setShowModal} />
           </Modal>
         </div>
       </div>
