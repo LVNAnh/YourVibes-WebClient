@@ -446,5 +446,8 @@ Messages: {
   NoFriendsToAdd: "Không có bạn bè để thêm",
   ConfirmLeaveConversation: "Xá nhận rời khỏi cuộc trò chuyện",
   LeftConversation: "Rời Cuộc Trò Chuyện",
+  CurrentMembers: "Thành viên hiện tại",
+  NoMembersInConversation: "Không có thành viên nào trong cuộc trò chuyện",
+  ManageMembers: "Quản lý thành viên",
 }
 };

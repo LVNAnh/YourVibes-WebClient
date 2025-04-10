@@ -9,7 +9,7 @@ import { FriendResponseModel } from '@/api/features/profile/model/FriendReponseM
 import { useAuth } from '@/context/auth/useAuth';
 import useColor from '@/hooks/useColor';
 import { EllipsisOutlined, DeleteOutlined, InboxOutlined, SendOutlined, SearchOutlined, ArrowLeftOutlined, PlusOutlined, SmileOutlined } from '@ant-design/icons';
-import { Empty, Layout, Skeleton, Typography, Popover, Badge, Menu, Dropdown, Popconfirm, Input, Button, Upload, Modal, Form, List, Avatar, Spin, message, Checkbox } from 'antd';
+import { Empty, Layout, Skeleton, Typography, Popover, Badge, Menu, Dropdown, Popconfirm, Input, Button, Upload, Modal, Form, List, Avatar, Spin, message, Checkbox, Tabs } from 'antd';
 import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react';
 import { useSearchParams } from 'next/navigation';
 import React, { useCallback, useEffect, useState } from 'react';
@@ -20,6 +20,7 @@ interface AddMemberModalProps {
   onAddMembers: (userIds: string[]) => Promise<any>;
   conversationId: string | undefined;
   existingMemberIds: string[];
+  existingMembers: FriendResponseModel[];
 }
 
 const AddMemberModal: React.FC<AddMemberModalProps> = ({ 
@@ -27,7 +28,8 @@ const AddMemberModal: React.FC<AddMemberModalProps> = ({
   onCancel, 
   onAddMembers,
   conversationId,
-  existingMemberIds
+  existingMemberIds,
+  existingMembers,
 }) => {
   const { user, localStrings } = useAuth();
   const { brandPrimary } = useColor();
@@ -35,6 +37,7 @@ const AddMemberModal: React.FC<AddMemberModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [adding, setAdding] = useState(false);
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
+  const [activeTab, setActiveTab] = useState<string>("addMembers");
 
   useEffect(() => {
     if (visible && user?.id) {
@@ -105,70 +108,123 @@ const AddMemberModal: React.FC<AddMemberModalProps> = ({
     }
   };
 
+  const tabItems = [
+    {
+      key: 'addMembers',
+      label: localStrings.Messages.AddMembers,
+      children: (
+        <div>
+          {loading ? (
+            <div style={{ textAlign: "center", padding: 24 }}>
+              <Spin />
+            </div>
+          ) : (
+            <List
+              style={{ 
+                maxHeight: 300, 
+                overflow: "auto", 
+                border: "1px solid #d9d9d9", 
+                borderRadius: 4,
+                padding: "8px 0"
+              }}
+              dataSource={friends}
+              renderItem={friend => (
+                <List.Item 
+                  key={friend.id}
+                  onClick={() => toggleFriendSelection(friend.id!)}
+                  style={{ 
+                    cursor: "pointer", 
+                    padding: "8px 16px",
+                    background: selectedFriends.includes(friend.id!) ? "rgba(0, 0, 0, 0.05)" : "transparent"
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", width: "100%" }}>
+                    <Checkbox 
+                      checked={selectedFriends.includes(friend.id!)}
+                      onChange={() => toggleFriendSelection(friend.id!)}
+                    />
+                    <Avatar 
+                      src={friend.avatar_url} 
+                      style={{ 
+                        marginLeft: 8,
+                        backgroundColor: !friend.avatar_url ? brandPrimary : undefined 
+                      }}
+                    >
+                      {!friend.avatar_url && (friend.name?.charAt(0) || "").toUpperCase()}
+                    </Avatar>
+                    <span style={{ marginLeft: 12 }}>
+                      {`${friend.family_name || ''} ${friend.name || ''}`}
+                    </span>
+                  </div>
+                </List.Item>
+              )}
+              locale={{ emptyText: localStrings.Messages.NoFriendsToAdd }}
+            />
+          )}
+        </div>
+      ),
+    },
+    {
+      key: 'currentMembers',
+      label: localStrings.Messages.CurrentMembers,
+      children: (
+        <List
+          style={{ 
+            maxHeight: 300, 
+            overflow: "auto", 
+            border: "1px solid #d9d9d9", 
+            borderRadius: 4,
+            padding: "8px 0"
+          }}
+          dataSource={existingMembers}
+          renderItem={member => (
+            <List.Item 
+              key={member.id}
+              style={{ 
+                padding: "8px 16px",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", width: "100%" }}>
+                <Avatar 
+                  src={member.avatar_url} 
+                  style={{ 
+                    marginLeft: 8,
+                    backgroundColor: !member.avatar_url ? brandPrimary : undefined 
+                  }}
+                >
+                  {!member.avatar_url && (member.name?.charAt(0) || "").toUpperCase()}
+                </Avatar>
+                <span style={{ marginLeft: 12 }}>
+                  {`${member.family_name || ''} ${member.name || ''}`}
+                  {member.id === user?.id ? ` (${localStrings.Messages.You})` : ''}
+                </span>
+              </div>
+            </List.Item>
+          )}
+          locale={{ emptyText: localStrings.Messages.NoMembersInConversation }}
+        />
+      ),
+    },
+  ];
+
   return (
     <Modal
       open={visible}
-      title={localStrings.Messages.AddMembers}
+      title={localStrings.Messages.ManageMembers}
       onCancel={onCancel}
       okText={localStrings.Messages.Add}
       cancelText={localStrings.Public.Cancel}
       onOk={handleAddMembers}
       confirmLoading={adding}
-      okButtonProps={{ disabled: selectedFriends.length === 0 }}
+      okButtonProps={{ 
+        disabled: selectedFriends.length === 0 || activeTab === "currentMembers"
+      }}
     >
-      <div style={{ marginBottom: 16 }}>
-        <label style={{ display: "block", marginBottom: 8 }}>
-          {localStrings.Messages.SelectFriendsToAdd}
-        </label>
-        
-        {loading ? (
-          <div style={{ textAlign: "center", padding: 24 }}>
-            <Spin />
-          </div>
-        ) : (
-          <List
-            style={{ 
-              maxHeight: 300, 
-              overflow: "auto", 
-              border: "1px solid #d9d9d9", 
-              borderRadius: 4,
-              padding: "8px 0"
-            }}
-            dataSource={friends}
-            renderItem={friend => (
-              <List.Item 
-                key={friend.id}
-                onClick={() => toggleFriendSelection(friend.id!)}
-                style={{ 
-                  cursor: "pointer", 
-                  padding: "8px 16px",
-                  background: selectedFriends.includes(friend.id!) ? "rgba(0, 0, 0, 0.05)" : "transparent"
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", width: "100%" }}>
-                  <Checkbox 
-                    checked={selectedFriends.includes(friend.id!)}
-                    onChange={() => toggleFriendSelection(friend.id!)}
-                  />
-                  <Avatar 
-                    src={friend.avatar_url} 
-                    style={{ 
-                      marginLeft: 8,
-                      backgroundColor: !friend.avatar_url ? brandPrimary : undefined 
-                    }}
-                  >
-                    {!friend.avatar_url && (friend.name?.charAt(0) || "").toUpperCase()}
-                  </Avatar>
-                  <span style={{ marginLeft: 12 }}>
-                    {`${friend.family_name || ''} ${friend.name || ''}`}
-                  </span>
-                </div>
-              </List.Item>
-            )}
-            locale={{ emptyText: localStrings.Messages.NoFriendsToAdd }}
-          />
-        )}
-      </div>
+      <Tabs 
+        activeKey={activeTab} 
+        onChange={setActiveTab}
+        items={tabItems}
+      />
     </Modal>
   );
 };
@@ -860,6 +916,7 @@ const MessagesFeature: React.FC = () => {
   const { user, localStrings } = useAuth();
   const searchParams = useSearchParams(); // Thêm để lấy query params
   const [emojiPickerVisible, setEmojiPickerVisible] = useState(false);
+  const [existingMembers, setExistingMembers] = useState<FriendResponseModel[]>([]);
   const {
     deleteMessage,
     createConversation,
@@ -1013,15 +1070,52 @@ const MessagesFeature: React.FC = () => {
       const response = await defaultMessagesRepo.getConversationDetailByUserID({
         conversation_id: conversationId
       });
-
+  
       if (response.data) {
         const members = Array.isArray(response.data) ? response.data : [response.data];
+        
         const memberIds = members.map(member => member.user_id).filter(Boolean) as string[];
         setExistingMemberIds(memberIds);
+        
+        const membersWithDetails = members.filter(member => member.user && member.user.id);
+        
+        if (membersWithDetails.length > 0) {
+          const memberProfiles = membersWithDetails.map(member => ({
+            id: member.user?.id,
+            name: member.user?.name,
+            family_name: member.user?.family_name,
+            avatar_url: member.user?.avatar_url
+          }));
+          
+          setExistingMembers(memberProfiles as FriendResponseModel[]);
+        } else {
+          const membersPromises = memberIds.map(async (userId) => {
+            try {
+              if (userId === user?.id) {
+                return {
+                  id: user.id,
+                  name: user.name,
+                  family_name: user.family_name,
+                  avatar_url: user.avatar_url
+                };
+              }
+              
+              return null;
+            } catch (error) {
+              console.error("Error fetching user details:", error);
+              return null;
+            }
+          });
+          
+          const membersDetails = await Promise.all(membersPromises);
+          const validMembers = membersDetails.filter(Boolean) as FriendResponseModel[];
+          setExistingMembers(validMembers);
+        }
       }
     } catch (error) {
       console.error("Error fetching conversation members:", error);
       setExistingMemberIds([]);
+      setExistingMembers([]);
     }
   };
 
@@ -1713,6 +1807,7 @@ const MessagesFeature: React.FC = () => {
         onAddMembers={handleAddMembers}
         conversationId={currentConversation?.id}
         existingMemberIds={existingMemberIds}
+        existingMembers={existingMembers}
       />
     </Layout>
   );

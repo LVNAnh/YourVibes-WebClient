@@ -370,7 +370,7 @@ export const useMessagesViewModel = () => {
       const createResponse = await defaultMessagesRepo.createConversation({
         name: name,
         image: image, 
-        user_ids: userIds && userIds.length > 0 ? userIds : [user.id]
+        user_ids: userIds || []
       });
       
       if (createResponse.data) {

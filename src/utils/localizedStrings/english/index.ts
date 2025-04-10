@@ -452,5 +452,8 @@ export const ENGLocalizedStrings = {
     NoFriendsToAdd: "No Friends To Add",
     ConfirmLeaveConversation: "Confirm Leave Conversation",
     LeftConversation: "Left Conversation",
+    CurrentMembers: "Current Members",
+    NoMembersInConversation: "No Members In Conversation",
+    ManageMembers: "Manage Members",
   }
 };
