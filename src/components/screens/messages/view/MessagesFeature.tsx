@@ -902,7 +902,7 @@ const MessagesFeature: React.FC = () => {
 
   interface SocketCallPayload {
     from: string;
-    signalData: any; // Hoặc có thể định nghĩa chi tiết hơn cho signalData
+    signalData: any; 
     callType: 'video' | 'audio';
   }
   
@@ -911,7 +911,6 @@ const MessagesFeature: React.FC = () => {
     reason?: string;
   }
 
-  // Lấy conversation_id từ query params
   const conversationIdFromUrl = searchParams.get("conversation_id");
 
   useEffect(() => {
@@ -920,18 +919,14 @@ const MessagesFeature: React.FC = () => {
       socketRef.current = io(socketUrl);
       initializeSocket();
       
-      // Đăng ký người dùng
       socketRef.current.emit('register', user.id);
       
-      // Lắng nghe cuộc gọi đến
       socketRef.current.on('call-incoming', async ({ from, signalData, callType }: SocketCallPayload) => {
         if (callType === 'video') {
-          // Tìm thông tin người gọi
           try {
             let fromUser: FriendResponseModel | undefined;
             
             if (conversations.length > 0) {
-              // Tìm trong các tin nhắn hiện có
               for (const conv of conversations) {
                 if (!conv.id) continue;
                 
@@ -949,8 +944,6 @@ const MessagesFeature: React.FC = () => {
                 }
               }
             }
-            
-            // Nếu không tìm thấy, có thể gọi API để lấy thông tin user (nếu cần)
             
             setIncomingCall({
               from,
@@ -1204,7 +1197,6 @@ const MessagesFeature: React.FC = () => {
 
     setInCall(true);
   
-    // Xác định người nhận cuộc gọi (trong trường hợp chat 1-1)
     const conversationMessages = getMessagesForConversation(conversation.id);
     const actualMessages = conversationMessages.filter(msg => !msg.isDateSeparator);
     
@@ -1220,7 +1212,6 @@ const MessagesFeature: React.FC = () => {
       }
     }
     
-    // Mở cửa sổ video call mới
     const width = 800;
     const height = 600;
     const left = (window.innerWidth - width) / 2;
@@ -1234,7 +1225,6 @@ const MessagesFeature: React.FC = () => {
     
     if (!videoCallWindow) {
       message.error("Không thể mở cửa sổ video call. Vui lòng kiểm tra trình chặn popup.");
-      // Từ chối cuộc gọi vì không thể mở cửa sổ
       if (socketRef.current) {
         socketRef.current.emit('call-declined', {
           to: incomingCall.from,
@@ -1246,7 +1236,6 @@ const MessagesFeature: React.FC = () => {
       return;
     }
     
-    // Viết nội dung video call page vào cửa sổ
     videoCallWindow.document.write(`
       <!DOCTYPE html>
       <html>
@@ -1750,7 +1739,6 @@ const MessagesFeature: React.FC = () => {
     const checkWindowClosed = setInterval(() => {
       if (videoCallWindow.closed) {
         clearInterval(checkWindowClosed);
-        console.log('Video call window closed, will reinitialize socket');
         setInCall(false); 
         
         setTimeout(() => {
@@ -1778,7 +1766,6 @@ const MessagesFeature: React.FC = () => {
     
     if (!videoCallWindow) {
       message.error("Không thể mở cửa sổ video call. Vui lòng kiểm tra trình chặn popup.");
-      // Từ chối cuộc gọi vì không thể mở cửa sổ
       socketRef.current.emit('call-declined', {
         to: incomingCall.from,
         from: user?.id,
@@ -1788,10 +1775,8 @@ const MessagesFeature: React.FC = () => {
       return;
     }
     
-    // Lưu signal data để truyền vào cửa sổ mới
     const signalData = incomingCall.signalData;
     
-    // Viết nội dung HTML cho trang video call
     videoCallWindow.document.write(`
       <!DOCTYPE html>
       <html>
@@ -1936,16 +1921,13 @@ const MessagesFeature: React.FC = () => {
           
           // Hàm khởi tạo
           async function initialize() {
-            console.log('Initializing video call...');
             try {
-              console.log('Requesting camera and microphone access...');
               // Lấy video và audio từ người dùng
               try {
                 localStream = await navigator.mediaDevices.getUserMedia({ 
                   video: true, 
                   audio: true 
                 });
-                console.log('Camera and microphone access granted');
               } catch (mediaError) {
                 console.error('Media error:', mediaError);
                 // Thử lại với chỉ audio nếu video thất bại
@@ -1955,7 +1937,6 @@ const MessagesFeature: React.FC = () => {
                     video: false, 
                     audio: true 
                   });
-                  console.log('Audio-only access granted');
                 } catch (audioError) {
                   console.error('Audio-only error:', audioError);
                   alert('Không thể truy cập microphone. Vui lòng kiểm tra quyền truy cập và làm mới trang.');
@@ -1966,12 +1947,10 @@ const MessagesFeature: React.FC = () => {
               // Hiển thị video người dùng
               if (localStream) {
                 localVideo.srcObject = localStream;
-                console.log('Local video stream set to video element');
               }
               
               // Đăng ký người dùng
               socket.emit('register', myUserId);
-              console.log('Registered user with socket:', myUserId);
               
               // Thiết lập các sự kiện Socket.IO
               setupSocketEvents();
@@ -1980,7 +1959,6 @@ const MessagesFeature: React.FC = () => {
               setupUIEvents();
               
               // Trả lời cuộc gọi ngay
-              console.log('Auto-answering call...');
               answerCall();
             } catch (error) {
               console.error('General initialization error:', error);
@@ -2051,7 +2029,6 @@ const MessagesFeature: React.FC = () => {
           // Trả lời cuộc gọi
           function answerCall() {
             try {
-              console.log('Answering call...');
               callAccepted = true;
               
               // Tạo peer connection
@@ -2061,11 +2038,9 @@ const MessagesFeature: React.FC = () => {
                 stream: localStream
               });
               
-              console.log('Peer created successfully');
               
               // Khi có tín hiệu cục bộ
               peer.on('signal', (data) => {
-                console.log('Generated signal to send back to caller:', data);
                 // Gửi tín hiệu đến người gọi
                 socket.emit('call-accepted', {
                   to: callerId,
@@ -2076,7 +2051,6 @@ const MessagesFeature: React.FC = () => {
               
               // Khi nhận được stream từ bạn
               peer.on('stream', (stream) => {
-                console.log('Received remote stream');
                 remoteStream = stream;
                 remoteVideo.srcObject = stream;
               });
@@ -2088,7 +2062,6 @@ const MessagesFeature: React.FC = () => {
                 window.close();
               });
               
-              console.log('Signaling with caller data:', callerSignalData);
               // Signal với dữ liệu từ người gọi
               peer.signal(callerSignalData);
             } catch (error) {
@@ -2153,16 +2126,13 @@ const MessagesFeature: React.FC = () => {
     
     videoCallWindow.document.close();
     
-    // Đánh dấu đã xử lý cuộc gọi
     setIncomingCall(null);
 
     const checkWindowClosed = setInterval(() => {
       if (videoCallWindow.closed) {
         clearInterval(checkWindowClosed);
-        console.log('Video call window closed, will reinitialize socket');
-        setInCall(false); // Đánh dấu là không còn trong cuộc gọi
+        setInCall(false); 
         
-        // Chờ một chút trước khi khởi tạo lại socket
         setTimeout(() => {
           initializeSocket();
         }, 1000);
@@ -2183,7 +2153,6 @@ const MessagesFeature: React.FC = () => {
       console.error('Error declining call:', error);
     }
     
-    // Reset trạng thái cuộc gọi
     setIncomingCall(null);
   };
 
@@ -2191,7 +2160,6 @@ const MessagesFeature: React.FC = () => {
     let ringtone: HTMLAudioElement | null = null;
     
     if (incomingCall) {
-      // Tạo âm thanh chuông
       ringtone = new Audio('https://cdn.pixabay.com/download/audio/2021/08/04/audio_12b0c19592.mp3');
       ringtone.loop = true;
       ringtone.play().catch(error => {
@@ -2210,77 +2178,57 @@ const MessagesFeature: React.FC = () => {
   const initializeSocket = () => {
     if (!user?.id || isReconnecting) return;
     
-    console.log('Initializing new socket connection...');
     
-    // Đánh dấu là đang trong quá trình kết nối lại
     setIsReconnecting(true);
     
-    // Xóa timeout kết nối lại hiện tại nếu có
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
     }
     
-    // Đóng kết nối cũ nếu có
     if (socketRef.current) {
-      console.log('Closing existing socket connection with ID:', socketRef.current.id);
-      // Gỡ bỏ tất cả các listener trước khi đóng kết nối
       socketRef.current.removeAllListeners();
       socketRef.current.disconnect();
       socketRef.current = null;
     }
     
     try {
-      // Tạo socket mới với các options để tránh vòng lặp reconnect vô tận
       const socketUrl = process.env.NEXT_PUBLIC_VIDEO_CHAT_SERVER || 'http://localhost:5000';
       socketRef.current = io(socketUrl, {
         reconnection: true,
-        reconnectionAttempts: 3,  // Giới hạn số lần thử kết nối lại
+        reconnectionAttempts: 3, 
         reconnectionDelay: 1000,
-        timeout: 10000,  // Timeout dài hơn để tránh ngắt kết nối quá sớm
+        timeout: 10000,  
         autoConnect: true
       });
       
-      // Khi socket kết nối thành công
       socketRef.current.on('connect', () => {
-        console.log('Socket connected successfully in main window with ID:', socketRef.current.id);
         
-        // Đánh dấu là không còn trong quá trình kết nối lại
         setIsReconnecting(false);
         setSocketInitialized(true);
         
-        // Đăng ký người dùng
         socketRef.current.emit('register', user.id);
         
-        // Nếu không đang trong cuộc gọi, lắng nghe cuộc gọi đến
         if (!inCall) {
           listenForIncomingCalls();
         }
       });
       
-      // Khi socket disconnect
       socketRef.current.on('disconnect', (reason) => {
-        console.log('Socket disconnected in main window, reason:', reason);
         setSocketInitialized(false);
         
-        // Chỉ tự động kết nối lại nếu không đang trong cuộc gọi và không phải do đóng bằng tay
         if (!inCall && reason !== 'io client disconnect') {
-          console.log('Will try to reconnect once in 3 seconds...');
-          // Dùng timeout để tránh vòng lặp vô tận
           reconnectTimeoutRef.current = setTimeout(() => {
-            console.log('Executing scheduled reconnect...');
-            setIsReconnecting(false);  // Reset biến cờ trước khi thử kết nối lại
+            setIsReconnecting(false);  
             initializeSocket();
           }, 3000);
         }
       });
       
-      // Xử lý lỗi kết nối
       socketRef.current.on('connect_error', (error) => {
         console.error('Socket connection error in main window:', error);
       });
       
-      // Lắng nghe các sự kiện khác...
     } catch (error) {
       console.error('Error creating socket:', error);
       setIsReconnecting(false);
@@ -2290,16 +2238,11 @@ const MessagesFeature: React.FC = () => {
   const listenForIncomingCalls = () => {
     if (!socketRef.current) return;
     
-    // Đảm bảo chỉ thêm listener một lần
     socketRef.current.off('call-incoming');
     
-    // Lắng nghe cuộc gọi đến
     socketRef.current.on('call-incoming', async ({ from, signalData, callType }) => {
-      console.log('Incoming call received from:', from);
       
-      // Nếu đang trong cuộc gọi, từ chối cuộc gọi mới
       if (inCall) {
-        console.log('Already in a call, declining new call');
         socketRef.current.emit('call-declined', {
           to: from,
           from: user.id,
@@ -2308,12 +2251,10 @@ const MessagesFeature: React.FC = () => {
         return;
       }
       
-      // Xử lý cuộc gọi đến như cũ
       try {
         let fromUser: FriendResponseModel | undefined;
         
         if (conversations.length > 0) {
-          // Tìm trong các tin nhắn hiện có
           for (const conv of conversations) {
             if (!conv.id) continue;
             
@@ -2350,9 +2291,7 @@ const MessagesFeature: React.FC = () => {
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data === 'call_ended') {
-        console.log('Received notification that call has ended');
         setInCall(false);
-        // Khởi tạo lại socket sau khi cuộc gọi kết thúc
         setTimeout(() => {
           initializeSocket();
         }, 1000);
