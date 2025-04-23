@@ -1,4 +1,3 @@
-// src/components/screens/messages/viewModel/MessagesViewModel.ts
 import { useEffect, useState, useCallback, useRef } from "react";
 import { ConversationResponseModel } from "@/api/features/messages/models/ConversationModel";
 import { FriendResponseModel } from "@/api/features/profile/model/FriendReponseModel";
@@ -16,7 +15,6 @@ export const useMessagesViewModel = () => {
   const conversationDetailViewModel = useConversationDetailViewModel();
   const { socketMessages } = useWebSocket();
   
-  // Ref để theo dõi tin nhắn đã xử lý từ websocket
   const processedSocketMessagesRef = useRef<Set<string>>(new Set());
 
   const { 
@@ -44,51 +42,40 @@ export const useMessagesViewModel = () => {
   const [existingMembers, setExistingMembers] = useState<FriendResponseModel[]>([]);
   const [existingMemberIds, setExistingMemberIds] = useState<string[]>([]);
 
-  // Xử lý khi chọn conversation
   useEffect(() => {
     if (currentConversation?.id) {
       fetchMessages(currentConversation.id, 1, false);
     }
   }, [currentConversation?.id, fetchMessages]);
 
-  // Đăng ký message listener
   useEffect(() => {
     const unsubscribe = addMessageListener((conversationId, updatedMessages) => {
-      // Xử lý khi có cập nhật từ message view model
       if (currentConversation?.id === conversationId) {
-        // Có thể thêm xử lý đặc biệt ở đây nếu cần
       }
     });
     
     return unsubscribe;
   }, [currentConversation?.id, addMessageListener]);
 
-  // Xử lý tin nhắn từ websocket
   useEffect(() => {
     if (!socketMessages.length) return;
   
     const latestMessage = socketMessages[0];
     if (!latestMessage || !latestMessage.conversation_id) return;
     
-    // Tạo ID duy nhất cho tin nhắn
     const messageUniqueId = `${latestMessage.conversation_id}-${latestMessage.user_id}-${latestMessage.content}-${latestMessage.created_at}`;
     
-    // Kiểm tra nếu đã xử lý
     if (processedSocketMessagesRef.current.has(messageUniqueId)) {
-      console.log("Duplicate websocket message ignored", latestMessage);
       return;
     }
     
-    // Đánh dấu đã xử lý
     processedSocketMessagesRef.current.add(messageUniqueId);
     
-    // Giới hạn kích thước cache
     if (processedSocketMessagesRef.current.size > 300) {
       const oldestEntries = Array.from(processedSocketMessagesRef.current).slice(0, 100);
       oldestEntries.forEach(id => processedSocketMessagesRef.current.delete(id));
     }
     
-    // Kiểm tra trùng lặp trong messages hiện tại  
     const isDuplicate = messages.some(m => 
       (m.id && m.id === latestMessage.id) || 
       (m.content === latestMessage.content && 
@@ -98,7 +85,6 @@ export const useMessagesViewModel = () => {
     );
     
     if (isDuplicate) {
-      console.log("Duplicate message detected in current messages", latestMessage);
       return;
     }
   
@@ -108,13 +94,10 @@ export const useMessagesViewModel = () => {
       fromServer: true
     };
   
-    // Thêm vào conversation
     addNewMessage(latestMessage.conversation_id, messageModel);
     
-    // Cập nhật thứ tự conversation
     updateConversationOrder(latestMessage.conversation_id);
   
-    // Xử lý theo trạng thái hiện tại
     if (currentConversation?.id === latestMessage.conversation_id) {
       setTimeout(() => {
         messageViewModel.scrollToBottom();
@@ -125,7 +108,6 @@ export const useMessagesViewModel = () => {
     }
   }, [socketMessages, currentConversation?.id, messages, markConversationAsRead, addNewMessage, updateConversationOrder, incrementUnreadCount, messageViewModel.scrollToBottom]);
 
-  // Lắng nghe sự kiện conversation mới
   useEffect(() => {
     const handleNewConversation = (event: CustomEvent) => {
       if (event.detail) {
@@ -140,7 +122,6 @@ export const useMessagesViewModel = () => {
     };
   }, [addNewConversation]);
 
-  // Đánh dấu conversation đã đọc khi chuyển đến
   useEffect(() => {
     if (currentConversation?.id) {
       markConversationAsRead(currentConversation.id);
@@ -148,7 +129,6 @@ export const useMessagesViewModel = () => {
     }
   }, [currentConversation?.id, markConversationAsRead, resetUnreadCount]);
 
-  // Fetch thành viên của conversation
   const fetchExistingMembers = useCallback(async (conversationId: string) => {
     const members = await fetchConversationMembers(conversationId);
     const memberIds = members.map(member => member.id || '');
@@ -159,7 +139,6 @@ export const useMessagesViewModel = () => {
     return { members, memberIds };
   }, [fetchConversationMembers]);
 
-  // Xử lý khi chọn conversation
   const handleSelectConversation = useCallback((conversation: ConversationResponseModel) => {
     if (currentConversation?.id === conversation.id) {
       return;
@@ -175,19 +154,16 @@ export const useMessagesViewModel = () => {
     }
   }, [currentConversation?.id, setCurrentConversation, markConversationAsRead, resetUnreadCount, fetchMessages]);
 
-  // Gửi tin nhắn
   const handleSendMessage = useCallback(() => {
     if (!currentConversation?.id) return;
     return sendMessage();
   }, [currentConversation?.id, sendMessage]);
 
-// Load thêm tin nhắn
 const handleLoadMoreMessages = useCallback(() => {
   if (!currentConversation?.id) return;
   return loadMoreMessages();
 }, [currentConversation?.id, loadMoreMessages]);
 
-// Xử lý scroll
 const handleScrollMessages = useCallback((e: React.UIEvent<HTMLDivElement>) => {
   if (!currentConversation?.id) return;
   
@@ -198,10 +174,8 @@ const handleScrollMessages = useCallback((e: React.UIEvent<HTMLDivElement>) => {
   }
 }, [currentConversation?.id, handleScroll, messagesLoading, markConversationAsRead]);
 
-// Cleanup khi component unmount
 useEffect(() => {
   return () => {
-    // Reset các cache và state để tránh memory leak
     processedSocketMessagesRef.current.clear();
     setExistingMembers([]);
     setExistingMemberIds([]);

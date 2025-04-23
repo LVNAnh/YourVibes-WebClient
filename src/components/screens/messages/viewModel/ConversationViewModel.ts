@@ -1,4 +1,3 @@
-// src/components/screens/messages/viewModel/ConversationViewModel.ts
 import { useState, useCallback, useRef } from "react";
 import { message } from "antd";
 
@@ -18,19 +17,15 @@ export const useConversationViewModel = () => {
   const [conversationDetails, setConversationDetails] = useState<Record<string, ConversationDetailResponseModel>>({});
   const [unreadMessageCounts, setUnreadMessageCounts] = useState<Record<string, number>>({});
   
-  // Ref để lưu trữ các conversation đã xử lý
   const processedConversationsRef = useRef<Set<string>>(new Set());
 
-  // Thêm conversation mới vào state
   const addNewConversation = useCallback((conversation: ConversationResponseModel) => {
     if (!conversation || !conversation.id) return;
     
-    // Kiểm tra trùng lặp
     if (processedConversationsRef.current.has(conversation.id)) {
       return;
     }
     
-    // Đánh dấu đã xử lý
     processedConversationsRef.current.add(conversation.id);
     
     setConversations(prev => {
@@ -41,7 +36,6 @@ export const useConversationViewModel = () => {
     });
   }, []);
 
-  // Cập nhật thứ tự conversation
   const updateConversationOrder = useCallback((conversationId: string) => {
     if (!conversationId) return;
     
@@ -52,10 +46,8 @@ export const useConversationViewModel = () => {
       const updatedConversations = [...prev];
       const conversation = { ...updatedConversations[conversationIndex] };
       
-      // Cập nhật thời gian
       conversation.updated_at = new Date().toISOString();
       
-      // Đưa lên đầu danh sách
       updatedConversations.splice(conversationIndex, 1);
       updatedConversations.unshift(conversation);
       
@@ -63,7 +55,6 @@ export const useConversationViewModel = () => {
     });
   }, []);
 
-  // Fetch danh sách conversations
   const fetchConversations = useCallback(async () => {
     if (!user?.id) return;
     
@@ -79,14 +70,12 @@ export const useConversationViewModel = () => {
           ? response.data 
           : [response.data];
         
-        // Đánh dấu tất cả conversations là đã xử lý
         conversationsList.forEach(conv => {
           if (conv.id) processedConversationsRef.current.add(conv.id);
         });
         
         setConversations(conversationsList);
         
-        // Fetch details cho mỗi conversation
         const detailsPromises = conversationsList.map(async (conversation) => {
           if (conversation.id) {
             try {
@@ -124,33 +113,30 @@ export const useConversationViewModel = () => {
     }
   }, [user?.id, localStrings.Messages.ErrorFetchingConversations]);
 
-  // Tạo conversation mới
   const createConversation = useCallback(async (name: string, image?: File | string, userIds?: string[]) => {
     if (!user?.id) return null;
     
     try {
-      // Lọc bỏ user hiện tại nếu có trong danh sách
-      const filteredUserIds = (userIds || []).filter(id => id !== user.id);
+      const uniqueUserIds = [...new Set(userIds || [])];
       
-      // Gọi API tạo conversation
+      const filteredUserIds = uniqueUserIds.filter(id => id !== user.id);
+      
+      if (filteredUserIds.length === 0) {
+        message.error("Need one more another user!");
+        return null;
+      }
+      
       const createResponse = await defaultMessagesRepo.createConversation({
         name: name,
         image: image, 
-        user_ids: [...(user.id ? [user.id] : []), ...filteredUserIds]
+        user_ids: filteredUserIds 
       });
       
       if (createResponse.data) {
         const newConversation = createResponse.data;
         
-        // Đánh dấu đã xử lý
-        if (newConversation.id) {
-          processedConversationsRef.current.add(newConversation.id);
-        }
-        
-        // Thêm vào state
+        // Cập nhật UI
         addNewConversation(newConversation);
-        
-        // Refresh danh sách
         await fetchConversations();
         
         return newConversation;
@@ -162,9 +148,8 @@ export const useConversationViewModel = () => {
       message.error(localStrings.Messages.GroupCreationFailed);
       return null;
     }
-  }, [user?.id, addNewConversation, fetchConversations, localStrings.Messages.GroupCreationFailed]);
+  }, [user?.id, addNewConversation, fetchConversations]);
 
-  // Cập nhật conversation
   const updateConversation = useCallback(async (conversationId: string, name?: string, image?: File | string) => {
     if (!conversationId) return null;
     
@@ -201,20 +186,16 @@ export const useConversationViewModel = () => {
     }
   }, [currentConversation?.id, localStrings.Public.Error]);
 
-  // Xóa conversation
   const deleteConversation = useCallback(async (conversationId: string) => {
     if (!user?.id || !conversationId) return;
     
     try {
       await defaultMessagesRepo.deleteConversation({ conversation_id: conversationId });
       
-      // Xóa khỏi danh sách đã xử lý
       processedConversationsRef.current.delete(conversationId);
       
-      // Refresh danh sách
       await fetchConversations();
       
-      // Reset current conversation nếu đang ở conversation bị xóa
       if (currentConversation?.id === conversationId) {
         setCurrentConversation(null);
       }
@@ -224,7 +205,6 @@ export const useConversationViewModel = () => {
     }
   }, [user?.id, currentConversation?.id, fetchConversations, localStrings.Public.Error]);
 
-  // Kiểm tra tin nhắn chưa đọc
   const hasUnreadMessages = useCallback((conversationId: string): boolean => {
     if (!conversationId) return false;
     
@@ -232,7 +212,6 @@ export const useConversationViewModel = () => {
     return detail && detail.last_mess_status === false;
   }, [conversationDetails]);
 
-  // Cập nhật trạng thái đã đọc
   const updateConversationReadStatus = useCallback((conversationId: string) => {
     if (!conversationId) return;
     
@@ -250,7 +229,6 @@ export const useConversationViewModel = () => {
     });
   }, []);
 
-  // Đánh dấu có tin nhắn mới chưa đọc
   const markNewMessageUnread = useCallback((conversationId: string) => {
     if (!conversationId || conversationId === currentConversation?.id) return;
     
@@ -268,7 +246,6 @@ export const useConversationViewModel = () => {
     });
   }, [currentConversation?.id]);
 
-  // Tăng số lượng tin nhắn chưa đọc
   const incrementUnreadCount = useCallback((conversationId: string) => {
     if (!conversationId || conversationId === currentConversation?.id) return;
     
@@ -278,7 +255,6 @@ export const useConversationViewModel = () => {
     }));
   }, [currentConversation?.id]);
 
-  // Reset số lượng tin nhắn chưa đọc
   const resetUnreadCount = useCallback((conversationId: string) => {
     if (!conversationId) return;
     

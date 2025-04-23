@@ -1,4 +1,3 @@
-// src/components/screens/messages/viewModel/MessageViewModel.ts
 import { useState, useRef, useEffect, useCallback } from "react";
 import { message } from "antd";
 
@@ -33,27 +32,22 @@ export const useMessageViewModel = () => {
   const processedMessagesRef = useRef<Set<string>>(new Set());
   const messageListenersRef = useRef<Set<(conversationId: string, messages: MessageResponseModel[]) => void>>(new Set());
 
-  // Hàm kiểm tra tin nhắn trùng lặp
   const isDuplicateMessage = useCallback((
     conversationId: string, 
     message: MessageResponseModel, 
     existingMessages: MessageResponseModel[]
   ): boolean => {
-    // Nếu có ID, kiểm tra theo ID
     if (message.id) {
       const isDuplicateById = existingMessages.some(msg => msg.id === message.id);
       if (isDuplicateById) return true;
       
-      // Kiểm tra bằng ID duy nhất đã xử lý
       const messageUniqueId = `${conversationId}-${message.id}`;
       if (processedMessagesRef.current.has(messageUniqueId)) return true;
     }
     
-    // Kiểm tra bằng nội dung, người gửi và thời gian
     const contentBasedId = `${conversationId}-${message.user_id}-${message.content}-${message.created_at}`;
     if (processedMessagesRef.current.has(contentBasedId)) return true;
     
-    // Kiểm tra dựa trên nội dung và thời gian
     const isDuplicateByContent = existingMessages.some(msg => 
       msg.user_id === message.user_id && 
       msg.content === message.content && 
@@ -64,28 +58,23 @@ export const useMessageViewModel = () => {
     return isDuplicateByContent;
   }, []);
 
-  // Đánh dấu tin nhắn đã xử lý
   const markMessageAsProcessed = useCallback((conversationId: string, message: MessageResponseModel) => {
     if (!message) return;
     
-    // Thêm vào cache dựa trên ID nếu có
     if (message.id) {
       const messageUniqueId = `${conversationId}-${message.id}`;
       processedMessagesRef.current.add(messageUniqueId);
     }
     
-    // Thêm vào cache dựa trên nội dung và thời gian
     const contentBasedId = `${conversationId}-${message.user_id}-${message.content}-${message.created_at}`;
     processedMessagesRef.current.add(contentBasedId);
     
-    // Giới hạn kích thước cache
     if (processedMessagesRef.current.size > 1000) {
       const oldestEntries = Array.from(processedMessagesRef.current).slice(0, 300);
       oldestEntries.forEach(id => processedMessagesRef.current.delete(id));
     }
   }, []);
 
-  // Đăng ký và hủy đăng ký listener
   const addMessageListener = useCallback((callback: (conversationId: string, messages: MessageResponseModel[]) => void) => {
     messageListenersRef.current.add(callback);
     return () => {
@@ -93,7 +82,6 @@ export const useMessageViewModel = () => {
     };
   }, []);
 
-  // Thông báo cho các listener
   const notifyMessageListeners = useCallback((conversationId: string, messages: MessageResponseModel[]) => {
     messageListenersRef.current.forEach(callback => {
       try {
@@ -104,25 +92,19 @@ export const useMessageViewModel = () => {
     });
   }, []);
 
-  // Thêm tin nhắn mới
   const addNewMessage = useCallback((conversationId: string, message: MessageResponseModel) => {
     if (!conversationId || !message) {
         return;
     }
     
-    // Lấy danh sách tin nhắn hiện tại của conversation
     const currentMessages = messagesByConversation[conversationId] || [];
     
-    // Kiểm tra trùng lặp trước khi thực hiện bất kỳ thao tác nào
     if (isDuplicateMessage(conversationId, message, currentMessages)) {
-        console.log("Prevented duplicate message:", message);
         return;
     }
     
-    // Đánh dấu tin nhắn đã xử lý
     markMessageAsProcessed(conversationId, message);
     
-    // Cập nhật state
     setMessagesByConversation(prev => {
         const conversationMessages = prev[conversationId] || [];
         
@@ -138,7 +120,6 @@ export const useMessageViewModel = () => {
         
         notifyMessageListeners(conversationId, updatedMessages);
         
-        // Cập nhật messages hiện tại nếu đang ở đúng conversation
         if (conversationId === currentConversationId) {
             setMessages(processMessagesWithDateSeparators(updatedMessages));
         }
@@ -150,12 +131,10 @@ export const useMessageViewModel = () => {
     });
   }, [messagesByConversation, currentConversationId, isDuplicateMessage, markMessageAsProcessed, notifyMessageListeners]);
 
-  // Lấy tin nhắn cho conversation cụ thể
   const getMessagesForConversation = useCallback((conversationId: string): MessageResponseModel[] => {
     return messagesByConversation[conversationId] || [];
   }, [messagesByConversation]);
 
-  // Cập nhật danh sách tin nhắn cho conversation
   const updateMessagesForConversation = useCallback((conversationId: string, newMessages: MessageResponseModel[]) => {
     if (!conversationId || !newMessages || newMessages.length === 0) return;
     
@@ -168,40 +147,32 @@ export const useMessageViewModel = () => {
     setMessagesByConversation(prev => {
       const existingMessages = prev[conversationId] || [];
       
-      // Tạo map để dễ dàng loại bỏ trùng lặp
       const messageMap = new Map<string, MessageResponseModel>();
       
-      // Thêm tin nhắn hiện có vào map
       existingMessages.forEach(msg => {
         if (msg.id) {
           messageMap.set(msg.id, msg);
         } else {
-          // Đối với tin nhắn không có ID, tạo key dựa trên nội dung và thời gian
           const key = `temp-${msg.user_id}-${msg.content}-${msg.created_at}`;
           messageMap.set(key, msg);
         }
       });
       
-      // Thêm tin nhắn mới vào map, ghi đè nếu trùng ID
       formattedMessages.forEach(msg => {
         if (msg.id) {
           messageMap.set(msg.id, msg);
         } else {
-          // Đối với tin nhắn không có ID
           const key = `temp-${msg.user_id}-${msg.content}-${msg.created_at}`;
-          // Chỉ thêm nếu chưa có
           if (!messageMap.has(key)) {
             messageMap.set(key, msg);
           }
         }
       });
       
-      // Chuyển map thành mảng và sắp xếp
       const uniqueMessages = Array.from(messageMap.values()).sort(
         (a, b) => new Date(a.created_at || "").getTime() - new Date(b.created_at || "").getTime()
       );
       
-      // Thông báo cho listeners
       notifyMessageListeners(conversationId, uniqueMessages);
       
       return {
@@ -211,7 +182,6 @@ export const useMessageViewModel = () => {
     });
   }, [notifyMessageListeners]);
 
-  // Format date cho hiển thị
   const formatDateForDisplay = useCallback((date: Date): string => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -239,7 +209,6 @@ export const useMessageViewModel = () => {
     }
   }, []);
   
-  // Xử lý tin nhắn và thêm date separators
   const processMessagesWithDateSeparators = useCallback((messages: MessageResponseModel[]): MessageWithDate[] => {
     if (!messages || messages.length === 0) return [];
   
@@ -284,14 +253,12 @@ export const useMessageViewModel = () => {
     return processedMessages;
   }, [formatDateForDisplay]);
 
-  // Fetch tin nhắn từ server
   const fetchMessages = useCallback(async (conversationId: string, page: number = 1, shouldAppend: boolean = false) => {
     if (!user?.id || !conversationId) return;
     
     setCurrentConversationId(conversationId);
     setMessagesLoading(true);
     
-    // Reset messages nếu không phải append
     if (!shouldAppend && !isFirstLoad.current) {
       setMessages([]);
     }
@@ -330,10 +297,8 @@ export const useMessageViewModel = () => {
           setMessagesByConversation(prev => {
             const existingMessages = prev[conversationId] || [];
             
-            // Combine và loại bỏ trùng lặp
             const messageMap = new Map<string, MessageResponseModel>();
             
-            // Thêm messages hiện tại vào map
             existingMessages.forEach(msg => {
               if (msg.id) {
                 messageMap.set(msg.id, msg);
@@ -343,7 +308,6 @@ export const useMessageViewModel = () => {
               }
             });
             
-            // Thêm messages mới vào map
             sortedApiMessages.forEach(msg => {
               if (msg.id) {
                 messageMap.set(msg.id, msg);
@@ -353,7 +317,6 @@ export const useMessageViewModel = () => {
               }
             });
             
-            // Chuyển map thành mảng và sắp xếp
             const combinedMessages = Array.from(messageMap.values()).sort(
               (a, b) => new Date(a.created_at || "").getTime() - new Date(b.created_at || "").getTime()
             );
@@ -361,7 +324,6 @@ export const useMessageViewModel = () => {
             const messagesWithDateSeparators = processMessagesWithDateSeparators(combinedMessages);
             setMessages(messagesWithDateSeparators);
             
-            // Đánh dấu tất cả tin nhắn từ API là đã xử lý
             sortedApiMessages.forEach(msg => {
               if (msg.id) markMessageAsProcessed(conversationId, msg);
             });
@@ -381,7 +343,6 @@ export const useMessageViewModel = () => {
           const messagesWithDateSeparators = processMessagesWithDateSeparators(sortedApiMessages);
           setMessages(messagesWithDateSeparators);
           
-          // Đánh dấu tất cả tin nhắn từ API là đã xử lý
           sortedApiMessages.forEach(msg => {
             if (msg.id) markMessageAsProcessed(conversationId, msg);
           });
@@ -404,7 +365,6 @@ export const useMessageViewModel = () => {
     }
   }, [user?.id, pageSize, processMessagesWithDateSeparators, markMessageAsProcessed]);
 
-  // Load thêm tin nhắn
   const loadMoreMessages = useCallback(async () => {
     if (currentConversationId && !messagesLoading && !isMessagesEnd) {
       const nextPage = currentPage + 1;
@@ -413,7 +373,6 @@ export const useMessageViewModel = () => {
     }
   }, [currentConversationId, messagesLoading, isMessagesEnd, currentPage, fetchMessages]);
 
-  // Xử lý scroll
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     if (!currentConversationId) return;
     
@@ -424,7 +383,6 @@ export const useMessageViewModel = () => {
     }
   }, [currentConversationId, messagesLoading, isMessagesEnd, loadMoreMessages]);
 
-  // Gửi tin nhắn
   const sendMessage = useCallback(async () => {
     if (!user?.id || !currentConversationId || !messageText.trim()) {
         return;
@@ -438,7 +396,6 @@ export const useMessageViewModel = () => {
     const messageContent = messageText.trim();
     setMessageText("");
     
-    // Kiểm tra tin nhắn trùng lặp
     const currentMessages = messagesByConversation[currentConversationId] || [];
     const hasDuplicateContent = currentMessages.some(msg => 
         msg.user_id === user.id && 
@@ -447,7 +404,6 @@ export const useMessageViewModel = () => {
     );
     
     if (hasDuplicateContent) {
-        console.log("Preventing sending duplicate message content");
         return;
     }
     
@@ -468,7 +424,6 @@ export const useMessageViewModel = () => {
         isTemporary: true
     };
     
-    // Tạm thời không thêm vào state để tránh trùng lặp
     // addNewMessage(currentConversationId, tempMessage);
     
     scrollToBottom();
@@ -507,14 +462,11 @@ export const useMessageViewModel = () => {
                 isTemporary: false 
             };
             
-            // Process the server response rather than using temp message
             markMessageAsProcessed(currentConversationId, serverMessage);
             
-            // Update the messages directly with the server response
             setMessagesByConversation(prev => {
                 const conversationMessages = prev[currentConversationId] || [];
                 
-                // Remove any temp message with the same content
                 const filteredMessages = conversationMessages.filter(msg => 
                     !(msg.isTemporary && msg.content === messageContent && msg.user_id === user.id)
                 );
@@ -545,12 +497,10 @@ export const useMessageViewModel = () => {
     markMessageAsProcessed, processMessagesWithDateSeparators, notifyMessageListeners
 ]);
 
-// Xóa tin nhắn
 const deleteMessage = useCallback(async (messageId: string) => {
     if (!user?.id || !currentConversationId) return;
     
     try {
-        // Cập nhật UI trước
         setMessages(prev => prev.filter(msg => msg.id !== messageId));
         
         setMessagesByConversation(prev => {
@@ -564,30 +514,25 @@ const deleteMessage = useCallback(async (messageId: string) => {
             };
         });
         
-        // Gọi API xóa
         await defaultMessagesRepo.deleteMessage({ message_id: messageId });
     } catch (error) {
         console.error("Error deleting message:", error);
         message.error(localStrings.Public.Error);
         
-        // Fetch lại messages nếu xóa thất bại
         if (currentConversationId) {
             fetchMessages(currentConversationId);
         }
     }
 }, [user?.id, currentConversationId, fetchMessages]);
 
-// Scroll to bottom
 const scrollToBottom = useCallback(() => {
     if (messageListRef.current) {
         messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
     }
 }, []);
 
-// Cleanup khi component unmount
 useEffect(() => {
     return () => {
-        // Xóa bộ nhớ cache để tránh memory leak
         processedMessagesRef.current.clear();
         messageListenersRef.current.clear();
     };

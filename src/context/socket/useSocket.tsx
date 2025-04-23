@@ -1,4 +1,3 @@
-// src/context/socket/useSocket.tsx
 "use client";
 import { createContext, ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { SocketContextType } from "./socketContextType";
@@ -6,7 +5,7 @@ import { useAuth } from "../auth/useAuth";
 import { MessageWebSocketResponseModel } from "@/api/features/messages/models/MessageModel";
 import useTypeNotification from "@/hooks/useTypeNotification";
 import { ApiPath } from "@/api/ApiPath";
-import { notification } from "antd";
+import { Avatar, notification } from "antd";
 
 const WebSocketContext = createContext<SocketContextType | undefined>(undefined);
 
@@ -19,7 +18,6 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children 
     const [connectionAttempts, setConnectionAttempts] = useState(0);
     const [connectionAttemptsNotification, setConnectionAttemptsNotification] = useState(0);
 
-    // Sử dụng useRef để lưu trữ WebSocket
     const wsMessageRef = useRef<WebSocket | null>(null);
     const wsNotificationRef = useRef<WebSocket | null>(null);
 
@@ -45,27 +43,20 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children 
     };
 
     const isMessageProcessed = (message: MessageWebSocketResponseModel): boolean => {
-        if (!message) return true;
+        if (!message || !message.id) return true;
         
-        // Tạo ID duy nhất cho tin nhắn
-        const messageId = message.id || '';
-        const uniqueId = `${message.conversation_id}-${message.user_id}-${message.content}-${message.created_at}`;
+        const uniqueId = `${message.id}-${message.conversation_id}-${message.content}`;
         
-        return processedMessagesRef.current.has(messageId) || 
-               processedMessagesRef.current.has(uniqueId);
+        return processedMessagesRef.current.has(uniqueId);
     };
 
     const markMessageAsProcessed = (message: MessageWebSocketResponseModel) => {
-        if (!message) return;
+        if (!message || !message.id) return;
         
-        const messageId = message.id || '';
-        const uniqueId = `${message.conversation_id}-${message.user_id}-${message.content}-${message.created_at}`;
+        const uniqueId = `${message.id}-${message.conversation_id}-${message.content}`;
         
-        // Thêm vào set các message đã xử lý
-        if (messageId) processedMessagesRef.current.add(messageId);
         processedMessagesRef.current.add(uniqueId);
         
-        // Giữ kích thước set trong giới hạn để tránh memory leak
         if (processedMessagesRef.current.size > 500) {
             const oldestEntries = Array.from(processedMessagesRef.current).slice(0, 200);
             oldestEntries.forEach(entry => processedMessagesRef.current.delete(entry));
@@ -81,7 +72,7 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children 
         ws.onopen = () => {
             console.log("🔗 WebSocket Message connected");
             setSocketMessages([]); 
-            setConnectionAttempts(0); // Reset connection attempts on successful connection
+            setConnectionAttempts(0); 
         };
 
         ws.onmessage = (e) => {
@@ -89,42 +80,54 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children 
                 console.log("📩 WebSocket Message received:", e.data);
                 const message = JSON.parse(e.data);
                 
-                // Kiểm tra tin nhắn đã xử lý chưa
-                if (isMessageProcessed(message)) {
-                    console.log("Duplicate message detected, ignoring:", message);
+                if (message.id && isMessageProcessed(message)) {
                     return;
                 }
                 
-                // Đánh dấu đã xử lý
-                markMessageAsProcessed(message);
-                
-                // Thêm tin nhắn vào state
                 setSocketMessages(prev => {
-                    // Kiểm tra lại một lần nữa để đảm bảo không có tin nhắn trùng lặp
                     const duplicate = prev.some(m => 
-                        m.id === message.id || 
-                        (m.content === message.content && 
-                         m.user_id === message.user_id && 
-                         m.conversation_id === message.conversation_id &&
-                         Math.abs(new Date(m.created_at || "").getTime() - 
-                               new Date(message.created_at || "").getTime()) < 5000)
+                        (message.id && m.id === message.id)
                     );
                     
                     if (duplicate) {
-                        console.log("Duplicate found in state, not adding:", message);
                         return prev;
                     }
                     
-                    // Chỉ giữ tối đa 50 tin nhắn gần nhất trong state
+                    markMessageAsProcessed(message);
+                    
                     return [message, ...prev.slice(0, 49)];
                 });
                 
-                // Hiển thị notification nếu người gửi không phải là user hiện tại
                 if (message?.user?.id !== user?.id) {
+                    const messageContent = message.content || "";
+                    const truncatedContent = messageContent.length > 50 
+                      ? `${messageContent.substring(0, 47)}...` 
+                      : messageContent;
+                    
                     notification.open({
-                        message: `${message?.user?.name} đã gửi cho bạn một tin nhắn`,
-                        placement: "topRight",
-                        duration: 5,
+                      message: `${message?.user?.family_name || ''} ${message?.user?.name || ''} đã gửi tin nhắn`,
+                      placement: "topRight",
+                      duration: 5,
+                      className: "custom-notification",
+                      style: {
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+                        backgroundColor: '#f8f9fa',
+                        border: '1px solid #e9ecef'
+                      },
+                      icon: (
+                        <Avatar 
+                            src={message.user?.avatar_url} 
+                            size="small"
+                            style={{ 
+                            backgroundColor: !message.user?.avatar_url ? '#1890ff' : undefined,
+                            }}
+                        >
+                            {!message.user?.avatar_url && (message.user?.name?.charAt(0) || 'U')}
+                        </Avatar>
+                        ),
+                      description: truncatedContent,
+                      key: `message-${message.conversation_id}-${Date.now()}`
                     });
                 }
             } catch (error) {
@@ -138,7 +141,7 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children 
             setConnectionAttempts(prevAttempts => {
                 const newAttempts = prevAttempts + 1;
                 if (newAttempts < MAX_CONNECTION_ATTEMPTS) {
-                    setTimeout(() => connectSocketMessage(), 2000); // Thử lại sau 2 giây
+                    setTimeout(() => connectSocketMessage(), 2000); 
                 }
                 return newAttempts;
             });
@@ -157,7 +160,7 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children 
 
         ws.onopen = () => {
             console.log("🔗 WebSocket Notification connected");
-            setConnectionAttemptsNotification(0); // Reset connection attempts
+            setConnectionAttemptsNotification(0); 
         };
 
         ws.onmessage = (e) => {
@@ -198,7 +201,7 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children 
             setConnectionAttemptsNotification(prevAttempts => {
                 const newAttempts = prevAttempts + 1;
                 if (newAttempts < MAX_CONNECTION_ATTEMPTS) {
-                    setTimeout(() => connectSocketNotification(), 5000); // Thử lại sau 5 giây
+                    setTimeout(() => connectSocketNotification(), 5000); 
                 }
                 return newAttempts;
             });
@@ -211,7 +214,6 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     const sendSocketMessage = (message: MessageWebSocketResponseModel): boolean => {
         if (!wsMessageRef.current || wsMessageRef.current.readyState !== WebSocket.OPEN) {
-            console.log("WebSocket not connected, cannot send message");
             return false;
         }
       
@@ -227,7 +229,6 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children 
         }
     };
 
-    // Khởi tạo WebSocket khi user thay đổi
     useEffect(() => {
         if (user?.id) {
             connectSocketNotification();
@@ -235,7 +236,6 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children 
         }
 
         return () => {
-            // Cleanup khi component unmount hoặc user thay đổi
             if (wsMessageRef.current) {
                 wsMessageRef.current.close();
                 wsMessageRef.current = null;
@@ -244,7 +244,6 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children 
                 wsNotificationRef.current.close();
                 wsNotificationRef.current = null;
             }
-            // Reset các state và cache
             setSocketMessages([]);
             processedMessagesRef.current.clear();
         };

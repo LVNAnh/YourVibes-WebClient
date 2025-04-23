@@ -1,4 +1,3 @@
-// src/components/screens/messages/viewModel/ConversationDetailViewModel.ts
 import { useState, useEffect, useCallback } from "react";
 import { message } from "antd";
 
@@ -13,7 +12,6 @@ export const useConversationDetailViewModel = () => {
   const [existingMembersLoading, setExistingMembersLoading] = useState(false);
   const [conversationMembersMap, setConversationMembersMap] = useState<Record<string, FriendResponseModel[]>>({});
 
-  // Đánh dấu conversation đã đọc
   const markConversationAsRead = useCallback(async (conversationId: string) => {
     if (!user?.id || !conversationId) return;
     
@@ -23,17 +21,14 @@ export const useConversationDetailViewModel = () => {
         user_id: user.id
       });
     } catch (error) {
-      // Silent error handling
       console.error("Error marking conversation as read:", error);
     }
   }, [user?.id]);
 
-  // Thêm thành viên vào conversation
   const addConversationMembers = useCallback(async (conversationId: string, userIds: string[]) => {
     if (!user?.id || !conversationId || !userIds.length) return null;
     
     try {
-      // Tạo promise để thêm từng user
       const createPromises = userIds.map(userId => 
         defaultMessagesRepo.createConversationDetail({
           conversation_id: conversationId,
@@ -41,10 +36,8 @@ export const useConversationDetailViewModel = () => {
         })
       );
       
-      // Thực hiện song song
       await Promise.all(createPromises);
       
-      // Refresh members list
       await fetchConversationMembers(conversationId);
       
       return true;
@@ -54,7 +47,6 @@ export const useConversationDetailViewModel = () => {
     }
   }, [user?.id]);
 
-  // Rời khỏi conversation
   const leaveConversation = useCallback(async (conversationId: string) => {
     if (!user?.id || !conversationId) return;
     
@@ -71,7 +63,6 @@ export const useConversationDetailViewModel = () => {
     }
   }, [user?.id]);
 
-  // Fetch thành viên của conversation
   const fetchConversationMembers = useCallback(async (conversationId: string): Promise<FriendResponseModel[]> => {
     if (!conversationId) return [];
     
@@ -97,7 +88,6 @@ export const useConversationDetailViewModel = () => {
           
           const membersList = memberProfiles as FriendResponseModel[];
           
-          // Cache kết quả
           setConversationMembersMap(prev => ({
             ...prev,
             [conversationId]: membersList
@@ -115,7 +105,6 @@ export const useConversationDetailViewModel = () => {
     }
   }, []);
 
-  // Lấy thành viên cho conversation cụ thể
   const getMembersForConversation = useCallback((conversationId: string): FriendResponseModel[] => {
     return conversationMembersMap[conversationId] || [];
   }, [conversationMembersMap]);
