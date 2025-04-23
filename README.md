@@ -34,3 +34,11 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## hehe
+NEXT_PUBLIC_API_ENDPOINT=https://yourvibes.duckdns.org:8080
+NEXT_PUBLIC_VIDEO_CHAT_SERVER=http://localhost:5000
+WEB_CLIENT_ID=1043707259288-skk9gvug9tlvahvfduf1km8p7dar0osf.apps.googleusercontent.com
+ANDROID_CLIENT_ID=1043707259288-u2rc90r329lmsfrceogq8ti1ouvtm5e2.apps.googleusercontent.com
+IOS_CLIENT_ID=1043707259288-8ae2okgbb1mlmg57br60hlh9g0hgmrfr.apps.googleusercontent.com
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=1043707259288-skk9gvug9tlvahvfduf1km8p7dar0osf.apps.googleusercontent.com
