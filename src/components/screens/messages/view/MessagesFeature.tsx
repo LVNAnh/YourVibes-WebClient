@@ -6,6 +6,8 @@ import { ConversationResponseModel } from '@/api/features/messages/models/Conver
 import { MessageResponseModel } from '@/api/features/messages/models/MessageModel';
 import { defaultProfileRepo } from '@/api/features/profile/ProfileRepository';
 import { FriendResponseModel } from '@/api/features/profile/model/FriendReponseModel';
+import GroupCallButton from '@/components/common/VideoChat/GroupCallButton';
+import VideoCallButton from '@/components/common/VideoChat/VideoCallButton';
 import { useAuth } from '@/context/auth/useAuth';
 import useColor from '@/hooks/useColor';
 import { EllipsisOutlined, DeleteOutlined, InboxOutlined, SendOutlined, SearchOutlined, ArrowLeftOutlined, PlusOutlined, SmileOutlined } from '@ant-design/icons';
@@ -1377,99 +1379,128 @@ const MessagesFeature: React.FC = () => {
               />
             )}
             {currentConversation ? (
-              <>
-                {/* For the header, we also want to show the friend's avatar for 1-on-1 chats */}
-                {(() => {
-                  const conversationMessages = getMessagesForConversation(currentConversation.id || '');
-                  const actualMessages = conversationMessages.filter(msg => !msg.isDateSeparator);
+  <>
+    {/* For the header, we also want to show the friend's avatar for 1-on-1 chats */}
+    {(() => {
+      const conversationMessages = getMessagesForConversation(currentConversation.id || '');
+      const actualMessages = conversationMessages.filter(msg => !msg.isDateSeparator);
 
-                  const isOneOnOneChat = currentConversation.name?.includes(" & ") ||
-                    (actualMessages.some(msg => msg.user_id !== user?.id) &&
-                      new Set(actualMessages.map(msg => msg.user_id)).size <= 2);
+      const isOneOnOneChat = currentConversation.name?.includes(" & ") ||
+        (actualMessages.some(msg => msg.user_id !== user?.id) &&
+          new Set(actualMessages.map(msg => msg.user_id)).size <= 2);
 
-                  const otherUser = isOneOnOneChat && actualMessages.length > 0
-                    ? actualMessages.find(msg => msg.user_id !== user?.id)?.user
-                    : null;
+      const otherUser = isOneOnOneChat && actualMessages.length > 0
+        ? actualMessages.find(msg => msg.user_id !== user?.id)?.user
+        : null;
 
-                  let avatarUrl = currentConversation.image;
+      let avatarUrl = currentConversation.image;
 
-                  if (isOneOnOneChat && !currentConversation.image && otherUser?.avatar_url) {
-                    avatarUrl = otherUser.avatar_url;
-                  }
+      if (isOneOnOneChat && !currentConversation.image && otherUser?.avatar_url) {
+        avatarUrl = otherUser.avatar_url;
+      }
 
-                  const avatarInitial = isOneOnOneChat && otherUser?.name
-                    ? otherUser.name.charAt(0).toUpperCase()
-                    : currentConversation.name?.charAt(0).toUpperCase();
+      const avatarInitial = isOneOnOneChat && otherUser?.name
+        ? otherUser.name.charAt(0).toUpperCase()
+        : currentConversation.name?.charAt(0).toUpperCase();
 
-                  return (
-                    <Avatar
-                      src={avatarUrl}
-                      size={40}
-                      style={{
-                        backgroundColor: !avatarUrl ? brandPrimary : undefined
-                      }}
-                    >
-                      {!avatarUrl && avatarInitial}
-                    </Avatar>
-                  );
-                })()}
-                <div style={{ marginLeft: 12 }}>
-                  <Text strong style={{ fontSize: 16 }}>
-                    {currentConversation.name}
-                  </Text>
-                </div>
-                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}>
-                <Dropdown
-                  overlay={
-                    <Menu>
-                      <Item 
-                        key="edit" 
-                        onClick={() => setEditConversationModalVisible(true)}
-                      >
-                        {localStrings.Messages.EditConversation}
-                      </Item>
-                      <Item 
-                        key="addMember" 
-                        onClick={handleOpenAddMemberModal}
-                      >
-                        {localStrings.Messages.AddMembers}
-                      </Item>
-                      <Item 
-                        key="delete" 
-                        danger 
-                        onClick={() => currentConversation?.id && handleDeleteConversation(currentConversation.id)}
-                      >
-                        {localStrings.Messages.DeleteConversation}
-                      </Item>
-                      {(currentConversation?.name && !currentConversation.name.includes(" & ")) && (
-                        <Item 
-                          key="leave" 
-                          onClick={handleLeaveConversation}
-                        >
-                          {localStrings.Messages.LeaveConversation}
-                        </Item>
-                      )}
-                    </Menu>
-                  }
-                  trigger={['click']}
-                >
-                  <Button 
-                    type="text" 
-                    icon={<EllipsisOutlined style={{ fontSize: 20 }} />} 
-                  />
-                </Dropdown>
-                </div>
-              </>
-            ) : (
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", padding: "20px" }}>
-                <div style={{ textAlign: "center", opacity: 0.5 }}>
-                  <div style={{ fontSize: 64, marginBottom: 20 }}>💬</div>
-                  <Text type="secondary" style={{ fontSize: 16 }}>
-                    {localStrings.Messages.SelectConversationToChat}
-                  </Text>
-                </div>
-              </div>
+      return (
+        <Avatar
+          src={avatarUrl}
+          size={40}
+          style={{
+            backgroundColor: !avatarUrl ? brandPrimary : undefined
+          }}
+        >
+          {!avatarUrl && avatarInitial}
+        </Avatar>
+      );
+    })()}
+    <div style={{ marginLeft: 12 }}>
+      <Text strong style={{ fontSize: 16 }}>
+        {currentConversation.name}
+      </Text>
+    </div>
+    <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+      {/* Thêm nút gọi video ở đây */}
+      {(() => {
+        const conversationMessages = getMessagesForConversation(currentConversation.id || '');
+        const actualMessages = conversationMessages.filter(msg => !msg.isDateSeparator);
+        
+        const isOneOnOneChat = currentConversation.name?.includes(" & ") ||
+          (actualMessages.some(msg => msg.user_id !== user?.id) &&
+            new Set(actualMessages.map(msg => msg.user_id)).size <= 2);
+          
+        const otherUser = isOneOnOneChat && actualMessages.length > 0
+          ? actualMessages.find(msg => msg.user_id !== user?.id)?.user
+          : null;
+          
+        if (isOneOnOneChat && otherUser) {
+          return (
+            <VideoCallButton 
+              userId={otherUser.id || ''} 
+              buttonType="video" 
+            />
+          );
+        } else {
+          return (
+            <GroupCallButton 
+              conversationId={currentConversation.id || ''} 
+            />
+          );
+        }
+      })()}
+      
+      <Dropdown
+        overlay={
+          <Menu>
+            <Item 
+              key="edit" 
+              onClick={() => setEditConversationModalVisible(true)}
+            >
+              {localStrings.Messages.EditConversation}
+            </Item>
+            <Item 
+              key="addMember" 
+              onClick={handleOpenAddMemberModal}
+            >
+              {localStrings.Messages.AddMembers}
+            </Item>
+            <Item 
+              key="delete" 
+              danger 
+              onClick={() => currentConversation?.id && handleDeleteConversation(currentConversation.id)}
+            >
+              {localStrings.Messages.DeleteConversation}
+            </Item>
+            {(currentConversation?.name && !currentConversation.name.includes(" & ")) && (
+              <Item 
+                key="leave" 
+                onClick={handleLeaveConversation}
+              >
+                {localStrings.Messages.LeaveConversation}
+              </Item>
             )}
+          </Menu>
+        }
+        trigger={['click']}
+      >
+        <Button 
+          type="text" 
+          icon={<EllipsisOutlined style={{ fontSize: 20 }} />} 
+        />
+      </Dropdown>
+    </div>
+  </>
+) : (
+  <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", padding: "20px" }}>
+    <div style={{ textAlign: "center", opacity: 0.5 }}>
+      <div style={{ fontSize: 64, marginBottom: 20 }}>💬</div>
+      <Text type="secondary" style={{ fontSize: 16 }}>
+        {localStrings.Messages.SelectConversationToChat}
+      </Text>
+    </div>
+  </div>
+)}
           </Header>
 
           {/* Messages Container */}
