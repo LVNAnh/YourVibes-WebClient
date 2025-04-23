@@ -40,7 +40,7 @@ const getBase64 = (file: File): Promise<string> =>
     reader.onerror = (error) => reject(error);
   });
 
-const AddPostViewModel = (repo: PostRepo, router: any) => {
+const AddPostViewModel = (repo: PostRepo,) => {
   const { localStrings } = useAuth();
   const { clearSavedPost } = usePostContext();
   const [createLoading, setCreateLoading] = useState<boolean>(false);
@@ -67,8 +67,8 @@ const AddPostViewModel = (repo: PostRepo, router: any) => {
         setPostContent("");
         setFileList([]);  
         clearSavedPost?.();
-        message.success({
-          content: localStrings.AddPost.CreatePostSuccess,
+        message.loading({
+          content: localStrings.AddPost.CensorPost,
         });
         postSubject.notify();  
       }

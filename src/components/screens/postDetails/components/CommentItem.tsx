@@ -174,10 +174,8 @@ const CommentItem: React.FC<CommentItemProps> = ({
           <button
             onClick={() => {
               toggleRepliesVisibility(comment.id);
-              if (visibleReplies[comment.id]) {
+              if (!visibleReplies[comment.id] && (!replyMap[comment.id] || replyMap[comment.id].length === 0)) {
                 fetchReplies(postId, comment.id);
-              } else {
-                fetchComments();
               }
             }}
             className="show-replies-btn text-blue-500 text-xs mb-2"

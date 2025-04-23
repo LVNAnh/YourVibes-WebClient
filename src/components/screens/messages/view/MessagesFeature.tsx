@@ -783,72 +783,6 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
         </Form.Item>
         
         {/* Image Upload Section */}
-        <Form.Item 
-          name="image" 
-          label={localStrings.Messages.ConversationImage}
-        >
-          <Dragger
-            name="avatar"
-            multiple={false}
-            showUploadList={false}
-            beforeUpload={() => false} 
-            onChange={(info) => {
-              handleImageUpload(info);
-            }}
-            accept="image/*"
-          >
-            {imagePreview ? (
-              <div style={{ 
-                position: 'relative',
-                width: '100%',
-                height: '200px',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                overflow: 'hidden'
-              }}>
-                <img 
-                  src={imagePreview} 
-                  alt="Conversation" 
-                  style={{ 
-                    maxWidth: '100%', 
-                    maxHeight: '200px', 
-                    objectFit: 'contain' 
-                  }} 
-                />
-                <Button 
-                  type="text" 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeImage();
-                  }}
-                  style={{ 
-                    position: 'absolute', 
-                    top: 5, 
-                    right: 5, 
-                    zIndex: 10,
-                    background: 'rgba(255, 255, 255, 0.7)'
-                  }}
-                >
-                  {localStrings.Messages.Remove}
-                </Button>
-              </div>
-            ) : (
-              <div>
-                <p className="ant-upload-drag-icon">
-                  <InboxOutlined />
-                </p>
-                <p className="ant-upload-text">
-                  {localStrings.Messages.ClickOrDragImageToUpload}
-                </p>
-                <p className="ant-upload-hint">
-                  {localStrings.Messages.SupportSingleImageUpload}
-                </p>
-              </div>
-            )}
-          </Dragger>
-        </Form.Item>
-        
         <div style={{ marginBottom: 16 }}>
           <label style={{ display: "block", marginBottom: 8 }}>
             {localStrings.Public.Messages}
@@ -918,6 +852,7 @@ const MessagesFeature: React.FC = () => {
   const [emojiPickerVisible, setEmojiPickerVisible] = useState(false);
   const [existingMembers, setExistingMembers] = useState<FriendResponseModel[]>([]);
   const {
+    fetchConversations,
     deleteMessage,
     createConversation,
     updateConversation,
@@ -936,15 +871,15 @@ const MessagesFeature: React.FC = () => {
     fetchMessages,
     isMessagesEnd,
     loadMoreMessages,
-    isWebSocketConnected,
     messageListRef,
     handleScroll,
     getMessagesForConversation,
     initialMessagesLoaded,
-    unreadMessages,
     markConversationAsRead,
     addConversationMembers,
     leaveConversation,
+    unreadMessageCounts,
+    resetUnreadCount,
   } = useMessagesViewModel();
 
   const [isMobile, setIsMobile] = useState(false);
@@ -956,6 +891,33 @@ const MessagesFeature: React.FC = () => {
 
   // Lấy conversation_id từ query params
   const conversationIdFromUrl = searchParams.get("conversation_id");
+
+  useEffect(() => {
+    fetchConversations();
+  }, []);
+
+  useEffect(() => {
+    if (currentConversation?.id) {
+      markConversationAsRead(currentConversation.id);
+      resetUnreadCount(currentConversation.id);
+    }
+  }, [currentConversation?.id]);
+  
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && currentConversation?.id) {
+        markConversationAsRead(currentConversation.id);
+      }
+    };
+  
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [currentConversation?.id, markConversationAsRead]);
+
+  
 
   useEffect(() => {
     const checkMobile = () => {
@@ -976,21 +938,22 @@ const MessagesFeature: React.FC = () => {
     }
   }, [currentConversation, isMobile]);
   
-  const handleSelectConversation = useCallback((conversation: ConversationResponseModel) => {
+  const handleSelectConversation = (conversation: ConversationResponseModel) => {
     if (currentConversation?.id === conversation.id) {
       return;
     }
-
+  
     setCurrentConversation(conversation);
-
+  
     setTimeout(() => {
       if (conversation.id) {
         fetchMessages(conversation.id);
         markConversationAsRead(conversation.id);
+        resetUnreadCount(conversation.id); 
       }
     }, 200);
-  }, [currentConversation?.id, fetchMessages, setCurrentConversation, markConversationAsRead]);
-  // Xử lý khi có conversation_id từ URL
+  };
+  
   useEffect(() => {
     if (conversationIdFromUrl && conversations.length > 0) {
       const selectedConversation = conversations.find(conv => conv.id === conversationIdFromUrl);
@@ -1291,8 +1254,6 @@ const MessagesFeature: React.FC = () => {
                         ? formatMessageTime(lastMessage.created_at)
                         : '';
 
-                      const hasUnreadMessages = currentConversation?.id !== item.id &&
-                        unreadMessages[item.id || ''] > 0;
 
                       const isOneOnOneChat = item.name?.includes(" & ") ||
                         (actualMessages.some(msg => msg.user_id !== user?.id) &&
@@ -1311,30 +1272,42 @@ const MessagesFeature: React.FC = () => {
                       const avatarInitial = isOneOnOneChat && otherUser?.name
                         ? otherUser.name.charAt(0).toUpperCase()
                         : item.name?.charAt(0).toUpperCase();
+                      
+
 
                       return (
                         <List.Item
-                          onClick={() => handleSelectConversation(item)}
+                          onClick={() => {
+                            handleSelectConversation(item);
+                          }}
                           style={{
                             cursor: "pointer",
                             padding: "12px 16px",
                             background: currentConversation?.id === item.id ? lightGray : "transparent",
                             transition: "background 0.3s",
-                            borderLeft: hasUnreadMessages ? `3px solid ${brandPrimary}` : "none"
                           }}
                           key={item.id}
                         >
                           <List.Item.Meta
                             avatar={
-                              <Avatar
-                                src={avatarUrl}
-                                size={48}
-                                style={{
-                                  backgroundColor: !avatarUrl ? brandPrimary : undefined
-                                }}
-                              >
-                                {!avatarUrl && avatarInitial}
-                              </Avatar>
+                              // <Badge 
+                              //   count={unreadMessageCounts[item.id || ''] || 0} 
+                              //   offset={[-5, 5]}
+                              //   size="small"
+                              //   style={{ 
+                              //     display: unreadMessageCounts[item.id || ''] ? 'block' : 'none' 
+                              //   }}
+                              // >
+                                <Avatar
+                                  src={avatarUrl}
+                                  size={48}
+                                  style={{
+                                    backgroundColor: !avatarUrl ? brandPrimary : undefined
+                                  }}
+                                >
+                                  {!avatarUrl && avatarInitial}
+                                </Avatar>
+                              // </Badge>
                             }
                             title={<Text strong>{item.name}</Text>}
                             description={
@@ -1343,7 +1316,6 @@ const MessagesFeature: React.FC = () => {
                                 ellipsis
                                 style={{
                                   maxWidth: '100%',
-                                  fontWeight: hasUnreadMessages ? 'bold' : 'normal'
                                 }}
                               >
                                 {messageDisplay}
@@ -1355,13 +1327,17 @@ const MessagesFeature: React.FC = () => {
                               <Text type="secondary" style={{ fontSize: '12px' }}>
                                 {lastMessageTime}
                               </Text>
-                              {hasUnreadMessages && (
-                                <Badge
-                                  count={unreadMessages[item.id || '']}
-                                  size="small"
-                                  style={{ marginTop: 4 }}
-                                />
-                              )}
+                              
+                              {/* {unreadMessageCounts[item.id || ''] > 0 && (
+                                // <Badge
+                                //   count={unreadMessageCounts[item.id || '']}
+                                //   size="small"
+                                //   style={{ 
+                                //     marginTop: 4,
+                                //     backgroundColor: brandPrimary 
+                                //   }}
+                                // />
+                              )} */}
                             </div>
                           )}
                         </List.Item>
@@ -1675,7 +1651,7 @@ const MessagesFeature: React.FC = () => {
                               />
                             ) : (
                               <MessageItem
-                                key={msg.id || `temp-${msg.created_at}`}
+                                key={`${msg.id || `temp-${msg.created_at}`}-${Date.now()}`}
                                 message={msg}
                                 onDelete={deleteMessage}
                               />
@@ -1757,7 +1733,6 @@ const MessagesFeature: React.FC = () => {
                       padding: "8px 12px",
                       flex: 1
                     }}
-                    disabled={!isWebSocketConnected}
                   />
 
                   <Button
@@ -1766,7 +1741,7 @@ const MessagesFeature: React.FC = () => {
                     icon={<SendOutlined />}
                     onClick={handleSendMessage}
                     style={{ marginLeft: 8 }}
-                    disabled={!messageText.trim() || !isWebSocketConnected || messageText.length > 500}
+                    disabled={!messageText.trim() || messageText.length > 500}
                   />
                 </div>
 

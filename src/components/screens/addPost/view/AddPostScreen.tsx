@@ -35,7 +35,7 @@ const AddPostScreen = ({ onPostSuccess, fetchNewFeeds, fetchUserPosts }: AddPost
   const { user, localStrings } = useAuth();
   const savedPost = usePostContext();
   const router = useRouter();
-  const viewModel = AddPostViewModel(defaultPostRepo, router);
+  const viewModel = AddPostViewModel(defaultPostRepo);
   const pathname = usePathname();
 
   const PostUpdateObserver = {

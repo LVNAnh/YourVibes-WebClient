@@ -47,6 +47,7 @@ const ProfileTabs = ({
     <AboutTab
       user={userInfo}
       loading={loading}
+      profileLoading={profileLoading}
       friendCount={friendCount}
       friends={friends}
       resultCode={resultCode}

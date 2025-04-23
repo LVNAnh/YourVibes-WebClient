@@ -52,6 +52,9 @@ interface IMessagesRepo {
 }
 
 export class MessagesRepo implements IMessagesRepo {
+  getConversationByUserIds(getConversationRequest: GetConversationDetailByUserIDRequestModel) {
+    throw new Error("Method not implemented.");
+  }
   // Conversation methods
   async createConversation(
     data: CreateConversationRequestModel | FormData

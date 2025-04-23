@@ -54,8 +54,14 @@ const Ads = ({ postId }: { postId: string }) => {
     getTomorrow,
   } = AdsViewModel(defaultPostRepo);
 
-  // Khởi tạo ngày bắt đầu là ngày mai (30/03/2025 nếu hôm nay là 29/03/2025)
-  const [date, setDate] = useState<Date>(getTomorrow());
+  // Khởi tạo ngày bắt đầu là ngày mai và ngày kết thúc là ngày mai + 1
+  const [startDate, setStartDate] = useState<Date>(getTomorrow());
+  const [endDate, setEndDate] = useState<Date>(() => {
+    const tomorrow = getTomorrow();
+    const nextDay = new Date(tomorrow);
+    nextDay.setDate(tomorrow.getDate() + 1);
+    return nextDay;
+  });
 
   const paymentMethods = [
     {
@@ -75,8 +81,6 @@ const Ads = ({ postId }: { postId: string }) => {
     }
   }, [postId, page]);
 
-  const [isHistoryExpanded, setHistoryExpanded] = useState(false);
-
   useEffect(() => {
     if (postId) {
       getPostDetail(postId);
@@ -84,18 +88,35 @@ const Ads = ({ postId }: { postId: string }) => {
     }
   }, [postId]);
 
-  // Hàm handleDateChange của bạn đã gọi đúng và cập nhật date và diffDay
-  const handleDateChange = (selectedDate: dayjs.Dayjs | null) => {
+  // Tính toán số ngày giữa startDate và endDate
+  useEffect(() => {
+    const diffTime = endDate.getTime() - startDate.getTime();
+    const dayDiff = Math.ceil(diffTime / (1000 * 3600 * 24));
+    setDiffDay(dayDiff > 0 ? dayDiff : 1);
+  }, [startDate, endDate]);
+
+  const handleStartDateChange = (selectedDate: dayjs.Dayjs | null) => {
     if (selectedDate) {
-      const newDate = selectedDate.toDate();
-      setDate(newDate);
-      const dayDiff = getDayDiffAds(newDate);
-      setDiffDay(dayDiff);
+      const newStartDate = selectedDate.toDate();
+      setStartDate(newStartDate);
+      // Đảm bảo endDate không nhỏ hơn startDate
+      if (newStartDate > endDate) {
+        const newEndDate = new Date(newStartDate);
+        newEndDate.setDate(newStartDate.getDate() + 1);
+        setEndDate(newEndDate);
+      }
+    }
+  };
+
+  const handleEndDateChange = (selectedDate: dayjs.Dayjs | null) => {
+    if (selectedDate) {
+      const newEndDate = selectedDate.toDate();
+      setEndDate(newEndDate);
     }
   };
 
   const chartData = {
-    labels: ads?.statistics?.map((stat) => dayjs(stat.aggregation_date).format("DD/MM")) || [],
+    labels: ads?.statistics?.map((stat) => dayjs(stat.aggregation_date).format("HH:mm:ss DD/MM")) || [],
     datasets: [
       {
         label: `${localStrings.Ads.Click}`,
@@ -317,22 +338,31 @@ const Ads = ({ postId }: { postId: string }) => {
                   style={{
                     color: "gray",
                     fontSize: 14,
-                    display: "block",
                   }}
                 >
-                  {localStrings.Ads.Minimum.replace("{{price}}", `${CurrencyFormat(price)}`)}
+                  VAT: 10%
                 </span>
                 <span
                   style={{
                     color: "gray",
                     fontSize: 14,
+                    display: "block",
                   }}
                 >
-                  VAT: 10%
+                  {localStrings.Ads.Minimum.replace("{{price}}", `${CurrencyFormat(price)}`)}
+                </span>
+
+                <span
+                  style={{
+                    color: "gray",
+                    fontSize: 14,
+                    display: "block",
+                  }}>
+                  {localStrings.Ads.LimitDay}
                 </span>
               </div>
 
-              {/* Select advertising date */}
+              {/* Select start date */}
               <div>
                 <div className="flex flex-row mt-4 mb-2 items-center">
                   <MdDateRange size={24} color={brandPrimary} />
@@ -343,21 +373,48 @@ const Ads = ({ postId }: { postId: string }) => {
                       paddingLeft: 10,
                     }}
                   >
-                    {localStrings.Ads.TimeAds} {diffDay} {localStrings.Public.Day}
+                    {localStrings.Ads.StartDay}
                   </span>
                 </div>
-
                 <DatePicker
                   format={"DD/MM/YYYY"}
-                  value={dayjs(date)}
-                  onChange={handleDateChange}
+                  value={dayjs(startDate)}
+                  onChange={handleStartDateChange}
                   style={{ width: "100%" }}
                   disabledDate={(current) => {
                     if (current && current < dayjs().endOf("day")) {
                       return true;
                     }
-                    // Giới hạn không quá 30 ngày kể từ ngày mai
-                    return current && current > dayjs().add(30, 'day');
+                    return false;
+                  }}
+                />
+              </div>
+
+              {/* Select end date */}
+              <div>
+                <div className="flex flex-row mt-4 mb-2 items-center">
+                  <MdDateRange size={24} color={brandPrimary} />
+                  <span
+                    style={{
+                      fontWeight: "bold",
+                      fontSize: 16,
+                      paddingLeft: 10,
+                    }}
+                  >
+                    {localStrings.Ads.EndDay}
+                  </span>
+                </div>
+                <DatePicker
+                  format={"DD/MM/YYYY"}
+                  value={dayjs(endDate)}
+                  onChange={handleEndDateChange}
+                  style={{ width: "100%" }}
+                  disabledDate={(current) => {
+                    if (current && current <= dayjs(startDate).endOf("day")) {
+                      return true;
+                    }
+                    // Giới hạn không quá 30 ngày kể từ startDate
+                    return current && current > dayjs(startDate).add(30, 'day');
                   }}
                 />
               </div>
@@ -425,8 +482,8 @@ const Ads = ({ postId }: { postId: string }) => {
                     advertisePost({
                       post_id: postId,
                       redirect_url: `${window.location.origin}/ads/${postId}`,
-                      end_date: (dayjs(date).format("YYYY-MM-DDT00:00:00") + "Z").toString(),
-                      start_date: (dayjs().format("YYYY-MM-DDT00:00:00") + "Z").toString(),
+                      start_date: dayjs(startDate).format("YYYY-MM-DD") + "T00:00:00Z",
+                      end_date: dayjs(endDate).format("YYYY-MM-DD") + "T00:00:00Z",
                       voucher_code: voucher || undefined,
                     });
                   }}
@@ -444,7 +501,7 @@ const Ads = ({ postId }: { postId: string }) => {
         )}
       </>
     );
-  }, [postId, adsLoading, ads, loading, post, date, voucher, discount]);
+  }, [postId, adsLoading, ads, loading, post, startDate, endDate, voucher, discount]);
 
   return (
     <div className="p-2.5 h-[100vh]">

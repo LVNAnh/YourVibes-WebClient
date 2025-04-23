@@ -10,7 +10,21 @@ export interface CreateMessageRequestModel {
         name?: string,
     }
 }
-
+export interface MessageWebSocketResponseModel {
+    id?: string;
+    content?: string;
+    user_id?: string;
+    conversation_id: string;
+    parent_id?: string;
+    parent_content?: string;
+    user: {
+      id?: string;
+      avatar_url?: string;
+      family_name?: string;
+      name?: string;
+    };
+    created_at?: string;
+  }
 export interface GetMessagesByConversationIdRequestModel {
     conversation_id?: string,
     created_at?: string,

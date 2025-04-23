@@ -161,6 +161,7 @@ const AdsViewModel = (repo: PostRepo) => {
     setPage,
     adsAll,
     setAdsAll,
+    loadMoreAds,
   };
 };
 

@@ -42,12 +42,10 @@ import HomeViewModel from "@/components/screens/home/viewModel/HomeViewModel";
 import { defaultNewFeedRepo } from "@/api/features/newFeed/NewFeedRepo";
 import EditPostScreen from "@/components/features/editpost/view/EditPostScreen";
 import PostDetailsScreen from "@/components/screens/postDetails/view/postDetailsScreen";
-import PostDetailsViewModel from "@/components/screens/postDetails/viewModel/postDetailsViewModel";
 import { LikeUsersModel } from "@/api/features/post/models/LikeUsersModel";
 import ReportViewModel from "@/components/screens/report/ViewModel/reportViewModel";
 import ReportScreen from "@/components/screens/report/views/Report";
-import ProfileViewModel from "@/components/screens/profile/viewModel/ProfileViewModel";
-import { t } from "i18next"; 
+import { defaultFriendRepo } from "@/api/features/friends/FriendRepo";
 
 interface IPost {
   post?: PostResponseModel;
@@ -86,12 +84,10 @@ const Post: React.FC<IPost> = React.memo(
       likedPost,
       setLikedPost,
       sharePost,
-      shareLoading,
-      deletePost,
+      shareLoading, 
       fetchUserLikePosts,
       userLikePost,
-    } = EditPostViewModel(defaultPostRepo, post?.id || "", post?.id || "");
-    const { deleteNewFeed } = HomeViewModel(defaultNewFeedRepo);
+    } = EditPostViewModel(defaultPostRepo, post?.id || "", post?.id || ""); 
     const [isEditModalVisible, setIsEditModalVisible] = useState(false);
     const [sharePostPrivacy, setSharePostPrivacy] = useState(Privacy.PUBLIC);
     const [shareContent, setShareContent] = useState("");

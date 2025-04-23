@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Line } from "react-chartjs-2";
 import {
   Chart,
@@ -19,11 +19,25 @@ import { useAuth } from "@/context/auth/useAuth";
 import Post from "@/components/common/post/views/Post";
 import dayjs from "dayjs";
 import useAdsManagement from "../viewModel/adsManagementViewModel";
-import PostList from "../../profile/components/PostList"; 
+import PostList from "../../profile/components/PostList";
 import { CurrencyFormat } from "@/utils/helper/CurrencyFormat";
 import { GetUsersPostsRequestModel } from "@/api/features/post/models/GetUsersPostsModel";
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
+
+// Custom debounce function
+function debounce<T extends (...args: any[]) => void>(func: T, wait: number): (...args: Parameters<T>) => void {
+  let timeout: NodeJS.Timeout | null = null;
+
+  return (...args: Parameters<T>) => {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+    timeout = setTimeout(() => {
+      func(...args);
+    }, wait);
+  };
+}
 
 interface MappedAd extends AdvertisePostResponseModel {
   post_id: string | undefined;
@@ -45,34 +59,10 @@ interface MappedAd extends AdvertisePostResponseModel {
 
 const AdDetailsModal = ({ ad, onClose, post }: { ad: MappedAd; onClose: () => void; post?: any }) => {
   const { localStrings } = useAuth();
-  const [statsData, setStatsData] = useState<AdvertisePostResponseModel | null>(null);
-  const [loadingStats, setLoadingStats] = useState<boolean>(false);
 
-  useEffect(() => {
-    const fetchStatistics = async () => {
-      if (!ad.id) return;
-      setLoadingStats(true);
-      try {
-        const response = await defaultPostRepo.getAdvertiseStatistics(ad.id);
-        if (response?.data) {
-          setStatsData(response.data);
-        }
-      } catch (error: any) {
-        console.error("Error fetching statistics:", error);
-      } finally {
-        setLoadingStats(false);
-      }
-    };
-
-    fetchStatistics();
-  }, [ad.id]);
-
-  const chartData = statsData || ad;
+  const chartData = ad;
   const data = {
-    labels:
-      chartData?.statistics?.map((stat) => dayjs(stat.aggregation_date).format("DD/MM")) ||
-      ad.labels ||
-      [],
+    labels: chartData?.statistics?.map((stat) => dayjs(stat.aggregation_date).format("HH:mm:ss DD/MM")) || ad.labels || [],
     datasets: [
       {
         label: localStrings.Ads.Click,
@@ -208,7 +198,7 @@ const AdDetailsModal = ({ ad, onClose, post }: { ad: MappedAd; onClose: () => vo
               <div className="bg-gray-50 p-2 rounded-md border border-gray-200 md:col-span-2">
                 <p>
                   <strong>{localStrings.Ads.StatusActive}:</strong>{" "}
-                  {Number(ad.is_advertisement) === 1 ?  localStrings.Ads.Done:localStrings.Ads.Active}
+                  {Number(ad.is_advertisement) === 1 ? localStrings.Ads.Done : localStrings.Ads.Active}
                 </p>
               </div>
             </div>
@@ -216,30 +206,24 @@ const AdDetailsModal = ({ ad, onClose, post }: { ad: MappedAd; onClose: () => vo
               <div className="bg-gray-50 p-2 rounded-md border border-gray-200">
                 <p>
                   <strong>{localStrings.Ads.Click}:</strong>{" "}
-                  {statsData?.total_clicks ?? ad.total_clicks ?? 0}
+                  {chartData?.total_clicks ?? ad.total_clicks ?? 0}
                 </p>
               </div>
               <div className="bg-gray-50 p-2 rounded-md border border-gray-200">
                 <p>
                   <strong>{localStrings.Ads.TotalReach}:</strong>{" "}
-                  {statsData?.total_reach ?? ad.total_reach ?? 0}
+                  {chartData?.total_reach ?? ad.total_reach ?? 0}
                 </p>
               </div>
               <div className="bg-gray-50 p-2 rounded-md border border-gray-200">
                 <p>
                   <strong>{localStrings.Ads.TotalImpressions}:</strong>{" "}
-                  {statsData?.total_impression ?? ad.total_impression ?? 0}
+                  {chartData?.total_impression ?? ad.total_impression ?? 0}
                 </p>
               </div>
             </div>
             <div className="h-[250px]">
-              {loadingStats ? (
-                <div className="flex justify-center items-center h-full">
-                  <Spin tip="Loading statistics..." />
-                </div>
-              ) : (
-                <Line data={data} options={options} />
-              )}
+              <Line data={data} options={options} />
             </div>
           </div>
         </div>
@@ -259,10 +243,12 @@ const AdDetailsModal = ({ ad, onClose, post }: { ad: MappedAd; onClose: () => vo
 const AdsManagementFeature = () => {
   const {
     loading,
+    loadingStatistics,
     ads,
     groupedAds,
     postDetails,
     isLoadingPostDetails,
+    preloadStatistics,
   } = useAdsManagement();
   const [searchTerm, setSearchTerm] = useState("");
   const [filteredAds, setFilteredAds] = useState<MappedAd[]>([]);
@@ -274,6 +260,11 @@ const AdsManagementFeature = () => {
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
   const { localStrings, user } = useAuth();
   const repo: PostRepo = defaultPostRepo;
+
+  const debouncedSetSearchTerm = useMemo(
+    () => debounce((value: string) => setSearchTerm(value), 300),
+    []
+  );
 
   useEffect(() => {
     const filter = ads.filter((ad: MappedAd) => {
@@ -297,7 +288,7 @@ const AdsManagementFeature = () => {
       };
       const res = await repo.getPosts(request);
       if (res?.data) {
-        const filteredPosts = res.data.filter((post) => post.is_advertisement=== 0 );
+        const filteredPosts = res.data.filter((post) => post.is_advertisement === 0);
         setModalPosts(filteredPosts);
       }
     } catch (err) {
@@ -313,7 +304,10 @@ const AdsManagementFeature = () => {
     }
   }, [isPostListModalVisible]);
 
-  const openModal = (ad: MappedAd) => {
+  const openModal = async (ad: MappedAd) => {
+    if (ad.id && !ad.statistics?.length) {
+      await preloadStatistics(ad.id);
+    }
     setSelectedAd(ad);
     closeHistoryModal();
   };
@@ -322,7 +316,15 @@ const AdsManagementFeature = () => {
     setSelectedAd(null);
   };
 
-  const openHistoryModal = (postId: string) => {
+  const openHistoryModal = async (postId: string) => {
+    const adsForPost = groupedAds[postId] || [];
+    await Promise.all(
+      adsForPost.map(async (ad) => {
+        if (ad.id && !ad.statistics?.length) {
+          await preloadStatistics(ad.id);
+        }
+      })
+    );
     setSelectedPostId(postId);
     setIsHistoryModalVisible(true);
   };
@@ -332,7 +334,9 @@ const AdsManagementFeature = () => {
     setSelectedPostId(null);
   };
 
-  const uniquePostIds = Array.from(new Set(filteredAds.map((ad) => ad.post_id).filter(Boolean))) as string[];
+  const uniquePostIds = Array.from(
+    new Set(ads.map((ad) => ad.post_id).filter((postId): postId is string => !!postId))
+  );
 
   return (
     <div className="p-6 min-h-screen">
@@ -353,7 +357,7 @@ const AdsManagementFeature = () => {
         open={isPostListModalVisible}
         onCancel={() => setIsPostListModalVisible(false)}
         footer={null}
-        width={700} 
+        width={700}
         centered
         bodyStyle={{ maxHeight: "1500px", overflowY: "auto", padding: "16px" }}
       >
@@ -382,7 +386,7 @@ const AdsManagementFeature = () => {
           placeholder={localStrings.Ads.SearchAds}
           className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
+          onChange={(e) => debouncedSetSearchTerm(e.target.value)}
         />
       </div>
 
@@ -394,7 +398,7 @@ const AdsManagementFeature = () => {
         <p className="text-center text-gray-500 text-lg py-10">{localStrings.Ads.NoAdsFound}</p>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-          {isLoadingPostDetails ? (
+          {isLoadingPostDetails || loadingStatistics ? (
             <div className="flex justify-center items-center col-span-full h-64">
               <Spin size="large" />
             </div>
@@ -491,17 +495,22 @@ const AdsManagementFeature = () => {
         </div>
       )}
 
-      {selectedAd && <AdDetailsModal ad={selectedAd} onClose={closeModal} post={postDetails[selectedAd.post_id!]} />}
+      {selectedAd && selectedAd.post_id && (
+        <AdDetailsModal ad={selectedAd} onClose={closeModal} post={postDetails[selectedAd.post_id]} />
+      )}
 
       <Modal
-        title={`${localStrings.Ads.HistoryforPost}: ${selectedPostId && postDetails[selectedPostId]?.content ? postDetails[selectedPostId].content : localStrings.Ads.NoAdsHistory}`}
+        title={`${localStrings.Ads.HistoryforPost}: ${
+          selectedPostId && postDetails[selectedPostId]?.content
+            ? postDetails[selectedPostId].content
+            : localStrings.Ads.NoAdsHistory
+        }`}
         open={isHistoryModalVisible}
         onCancel={closeHistoryModal}
         footer={null}
         width={700}
         bodyStyle={{ maxHeight: "600px", overflowY: "auto", padding: "16px" }}
       >
-
         <div className="space-y-3">
           {selectedPostId && groupedAds[selectedPostId] ? (
             groupedAds[selectedPostId].map((ad) => (
@@ -517,7 +526,8 @@ const AdsManagementFeature = () => {
                   <strong>{localStrings.Ads.EndDay}:</strong> {ad.end_date}
                 </p>
                 <p>
-                  <strong>{localStrings.Ads.Grant}:</strong> {ad.bill?.price ? CurrencyFormat(ad.bill.price) : "N/A"}
+                  <strong>{localStrings.Ads.Grant}:</strong>{" "}
+                  {ad.bill?.price ? CurrencyFormat(ad.bill.price) : "N/A"}
                 </p>
               </div>
             ))

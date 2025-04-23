@@ -3,4 +3,5 @@ export interface FriendResponseModel {
   family_name?: string;
   name?: string;
   avatar_url?: string;
+  data?: string;
 }

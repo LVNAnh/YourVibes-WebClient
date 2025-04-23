@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Avatar, Button, Card, Dropdown, Menu, Modal, Spin, message } from "antd";
 import { useRouter } from "next/navigation";
 import { UsergroupAddOutlined, MoreOutlined } from "@ant-design/icons";
@@ -28,36 +28,79 @@ const FriendSuggestions: React.FC<FriendSuggestionsProps> = ({ postIndex }) => {
   const [friendSuggestions, setFriendSuggestions] = useState<FriendSuggestionWithStatus[]>([]);
   const [loading, setLoading] = useState(false);
   const [friendRequestLoading, setFriendRequestLoading] = useState<Record<string, boolean>>({});
-
-  // Lấy danh sách gợi ý khi component khởi tạo
-  useEffect(() => {
-    fetchSuggestions();
-  }, []);
+  const [page, setPage] = useState(1); // Theo dõi trang hiện tại
+  const [hasMore, setHasMore] = useState(true); // Kiểm tra còn dữ liệu để tải
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null); // Ref cho container cuộn ngang
 
   // Memoized fetch function
-  const fetchSuggestions = useCallback(async () => {
-    setLoading(true);
-    try {
-      const requestData: NewFeedRequestModel = { limit: 10, page: 1 };
-      const response = await defaultNewFeedRepo.getSuggestion(requestData);
-      if (response.code === 20001) {
-        const suggestionsWithStatus = response.data.map((suggestion: SuggestionUserModel) => ({
-          ...suggestion,
-          friendStatus: suggestion.is_send_friend_request
-            ? FriendStatus.SendFriendRequest
-            : (suggestion as any).friend_status || FriendStatus.NotFriend,
-          hidden: false,
-        }));
-        setFriendSuggestions(suggestionsWithStatus);
-      } else {
-        throw new Error(response.message);
+  const fetchSuggestions = useCallback(
+    async (pageNum: number, append = false) => {
+      if (!hasMore && append) return; // Không tải thêm nếu không còn dữ liệu
+      setLoading(true);
+      try {
+        const requestData: NewFeedRequestModel = { limit: 10, page: pageNum };
+        const response = await defaultNewFeedRepo.getSuggestion(requestData);
+        if (response.code === 20001) {
+          const suggestionsWithStatus = response.data.map((suggestion: SuggestionUserModel) => ({
+            ...suggestion,
+            friendStatus: suggestion.is_send_friend_request
+              ? FriendStatus.SendFriendRequest
+              : (suggestion as any).friend_status || FriendStatus.NotFriend,
+            hidden: false,
+          }));
+
+          if (append) {
+            setFriendSuggestions((prev) => [...prev, ...suggestionsWithStatus]);
+          } else {
+            setFriendSuggestions(suggestionsWithStatus);
+          }
+
+          // Nếu số lượng dữ liệu trả về nhỏ hơn limit, không còn dữ liệu để tải
+          setHasMore(response.data.length === 10);
+        } else {
+          throw new Error(response.message);
+        }
+      } catch (error: any) {
+        message.error(error?.error?.message_detail || error?.message);
+      } finally {
+        setLoading(false);
       }
-    } catch (error: any) {
-      message.error(error?.error?.message_detail || error?.message || "Failed to fetch suggestions");
-    } finally {
-      setLoading(false);
+    },
+    [hasMore]
+  );
+
+  // Gọi fetchSuggestions lần đầu khi component khởi tạo
+  useEffect(() => {
+    fetchSuggestions(1);
+  }, [fetchSuggestions]);
+
+  // Theo dõi sự kiện cuộn ngang
+  useEffect(() => {
+    const handleScroll = () => {
+      if (!scrollContainerRef.current || loading || !hasMore) return;
+
+      const { scrollLeft, scrollWidth, clientWidth } = scrollContainerRef.current;
+      // Kiểm tra nếu người dùng cuộn đến gần cuối (cách cuối 100px)
+      if (scrollWidth - scrollLeft - clientWidth < 100) {
+        setPage((prevPage) => {
+          const nextPage = prevPage + 1;
+          fetchSuggestions(nextPage, true); // Tải thêm dữ liệu
+          return nextPage;
+        });
+      }
+    };
+
+    const scrollContainer = scrollContainerRef.current;
+    if (scrollContainer) {
+      scrollContainer.addEventListener("scroll", handleScroll);
     }
-  }, []);
+
+    return () => {
+      if (scrollContainer) {
+        scrollContainer.removeEventListener("scroll", handleScroll);
+      }
+    };
+  }, [loading, hasMore, fetchSuggestions]);
 
   // Memoized friend request handlers
   const handleFriendRequest = useCallback(
@@ -167,21 +210,6 @@ const FriendSuggestions: React.FC<FriendSuggestionsProps> = ({ postIndex }) => {
               </div>
             </Button>
           );
-        case FriendStatus.SendFriendRequest:
-          return (
-            <Button
-              type="default"
-              block
-              loading={isLoading}
-              onClick={() => handleFriendRequest(userId, "cancel")}
-              style={{ height: "36px" }}
-            >
-              <div style={buttonStyles}>
-                <RxCross2 size={16} />
-                <span>{localStrings.Public.CancelFriendRequest}</span>
-              </div>
-            </Button>
-          );
         case FriendStatus.ReceiveFriendRequest:
           return (
             <div style={{ display: "flex", gap: "5px" }}>
@@ -216,7 +244,7 @@ const FriendSuggestions: React.FC<FriendSuggestionsProps> = ({ postIndex }) => {
         if (key === "1") setIsWhyModalVisible(true);
         if (key === "2") {
           setFriendSuggestions((prev) => prev.map((s) => ({ ...s, hidden: true })));
-          fetchSuggestions();
+          fetchSuggestions(1); // Reset về trang 1 khi ẩn tất cả
         }
       }}
     >
@@ -239,13 +267,16 @@ const FriendSuggestions: React.FC<FriendSuggestionsProps> = ({ postIndex }) => {
         </Dropdown>
       </div>
 
-      {loading ? (
+      {loading && page === 1 ? (
         <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100px" }}>
           <Spin size="large" />
         </div>
       ) : (
         <>
-          <div style={{ display: "flex", overflowX: "auto", gap: "10px", paddingBottom: "10px" }}>
+          <div
+            ref={scrollContainerRef}
+            style={{ display: "flex", overflowX: "auto", gap: "10px", paddingBottom: "10px" }}
+          >
             {friendSuggestions
               .filter((s) => !s.hidden)
               .map((suggestion) => (
@@ -281,13 +312,18 @@ const FriendSuggestions: React.FC<FriendSuggestionsProps> = ({ postIndex }) => {
                   </Button>
                 </Card>
               ))}
+            {loading && page > 1 && (
+              <div style={{ display: "flex", alignItems: "center", padding: "0 10px", flexShrink: 0 }}>
+                <Spin />
+              </div>
+            )}
           </div>
 
-          <div style={{ textAlign: "center", marginTop: "10px" }}>
-            <Button type="link" onClick={() => setIsModalVisible(true)}>
-              {localStrings.Suggested.SeeMore}
-            </Button>
-          </div>
+          {!hasMore && (
+            <div style={{ textAlign: "center", marginTop: "10px" }}>
+              <p>{localStrings.Suggested.NoMoreSuggestions}</p>
+            </div>
+          )}
 
           <Modal
             title={localStrings.Suggested.SuggestedFriends}

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Spin, Modal, Empty, message, Avatar } from 'antd';
+import { Spin, Modal, Empty, message, Avatar, Skeleton } from 'antd';
 import { LoadingOutlined } from '@ant-design/icons';
 import InfiniteScroll from 'react-infinite-scroll-component';
 import { PostResponseModel } from '@/api/features/post/models/PostResponseModel';
@@ -86,7 +86,7 @@ const PostList = ({ loading, posts, loadMorePosts, user, fetchUserPosts, hasMore
             dataLength={posts.length}
             next={loadMorePosts}
             hasMore={hasMore}
-            loader={<Spin indicator={<LoadingOutlined spin />} size="large" />}
+            loader={ <Skeleton avatar paragraph={{ rows: 4 }} />}
             endMessage={
               <p style={{ textAlign: 'center' }}>
                 {/* <b>{localStrings.Public.NoMorePosts}</b> */}

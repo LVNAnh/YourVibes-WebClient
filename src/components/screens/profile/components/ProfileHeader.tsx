@@ -10,29 +10,30 @@ import {
   Button,
   Col,
   Dropdown,
-  Flex,
   Image,
   MenuProps,
   Modal,
   Row,
-  Spin,
 } from "antd";
-import { LoadingOutlined } from "@ant-design/icons";
 import { FaUserCheck, FaUserPlus } from "react-icons/fa";
 import { RxCross2 } from "react-icons/rx";
-import { BsThreeDots } from "react-icons/bs";
 import { useRouter } from "next/navigation";
 import ReportViewModel from "../../report/ViewModel/reportViewModel";
 import ReportScreen from "../../report/views/Report";
 import { IoFlagSharp } from "react-icons/io5";
 import UpdateProfileViewModel from "../../updateProfile/viewModel/UpdateProfileViewModel";
 import { defaultProfileRepo } from "@/api/features/profile/ProfileRepository";
-import { MessageOutlined } from "@ant-design/icons"; // Thêm icon cho nút nhắn tin
+import { MessageOutlined } from "@ant-design/icons";
+import { defaultMessagesRepo } from "@/api/features/messages/MessagesRepo";
+import { CreateConversationRequestModel } from "@/api/features/messages/models/ConversationModel";
+import { 
+  UpdateConversationDetailRequestModel, 
+  GetConversationDetailByUserIDRequestModel 
+} from "@/api/features/messages/models/ConversationDetailModel";
 
 const ProfileHeader = ({
   total,
   user,
-  loading,
   friendCount,
   fetchUserProfile,
 }: {
@@ -43,11 +44,12 @@ const ProfileHeader = ({
   fetchUserProfile: (id: string) => void;
 }) => {
   const { lightGray, brandPrimary, backgroundColor } = useColor();
-  const { localStrings, language, isLoginUser } = useAuth();
+  const { localStrings, language, isLoginUser, user: currentUser } = useAuth();
   const router = useRouter();
   const { showModal, setShowModal } = ReportViewModel();
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const { objectPosition, setObjectPosition } = UpdateProfileViewModel(defaultProfileRepo);
+  const [isLoadingMessage, setIsLoadingMessage] = useState(false);
 
   useEffect(() => {
     const savedPosition = localStorage.getItem("capwallPosition");
@@ -94,13 +96,56 @@ const ProfileHeader = ({
     },
   ];
 
-  // Hàm xử lý khi nhấn nút nhắn tin
-  const handleMessageClick = () => {
-    // Điều hướng đến trang nhắn tin hoặc mở modal nhắn tin
-    router.push(`/messages?userId=${user?.id}`);
+  const handleMessageClick = async () => {
+    if (!currentUser?.id || !user?.id) return;
+
+    setIsLoadingMessage(true);
+    try { 
+      const createConversationData: CreateConversationRequestModel = {
+        name: `${currentUser.name} - ${user.name}`,
+        user_ids: [currentUser.id, user.id],
+      };
+
+      const createResponse = await defaultMessagesRepo.createConversation(createConversationData);
+      
+      if (createResponse.code === 20001 && createResponse.data?.id) { 
+        const updateConversationDetailData: UpdateConversationDetailRequestModel = {
+          conversation_id: createResponse.data.id,
+          user_id: currentUser.id,
+        };
+        await defaultMessagesRepo.updateConversationDetail(updateConversationDetailData);
+ 
+        const getMessagesData: GetConversationDetailByUserIDRequestModel = {
+          conversation_id: createResponse.data.id,
+          limit: 20,
+          page: 1,
+        };
+        const messagesResponse = await defaultMessagesRepo.getMessagesByConversationId({
+          ...getMessagesData,
+          sort_by: "created_at",
+          is_descending: true,
+        });
+ 
+        router.push(`/messages?conversation_id=${createResponse.data.id}`);
+      }
+      else{
+        if(createResponse?.error?.message === 'Conversation has already exist'){
+          const existingConversationId = createResponse?.error?.message_detail;
+          router.push(`/messages?conversation_id=${existingConversationId}`);
+        }
+      }
+    } catch (error: any) {
+      if (error.response?.data?.error?.code === 50028) { 
+        const existingConversationId = error.response.data.error.message_detail;
+        router.push(`/messages?conversation_id=${existingConversationId}`);
+      } else {
+        console.error("Error creating conversation:", error);
+      }
+    } finally {
+      setIsLoadingMessage(false);
+    }
   };
 
-  // Render friend để check status
   const renderFriendButton = useCallback(() => {
     switch (newFriendStatus) {
       case FriendStatus.NotFriend:
@@ -332,12 +377,13 @@ const ProfileHeader = ({
                 <>
                   <span className="mr-4">{renderFriendButton()}</span>
 
-                  {/* Nút nhắn tin */}
+                  {/* Message Button */}
                   <Button
                     type="default"
                     onClick={handleMessageClick}
                     icon={<MessageOutlined />}
-                    style={{ marginRight: 8 }}
+                    loading={isLoadingMessage}
+                    style={{ marginRight: 8, border: "1px solid #ccc" }}
                   >
                     <span className="font-bold text-base">
                       {localStrings.Public.Message || "Message"}

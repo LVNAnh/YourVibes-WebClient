@@ -44,8 +44,6 @@ const LoginPage = () => {
       },
       onLoginSuccess: (data: any) => {
         setIsLoggingIn(false); 
-        message.success(localStrings.Login.LoginSuccess);
-        router.push("/home");
       },
     };
 

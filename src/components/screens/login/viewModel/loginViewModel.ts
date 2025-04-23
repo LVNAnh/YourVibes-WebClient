@@ -2,7 +2,9 @@ import { AuthenRepo } from "@/api/features/authenticate/AuthenRepo";
 import { LoginRequestModel } from "@/api/features/authenticate/model/LoginModel";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/context/auth/useAuth";
-import { useSearchParams } from "next/navigation"; 
+import { useRouter, useSearchParams } from "next/navigation";
+import { CustomStatusCode } from "@/utils/helper/CustomStatus";
+import { message } from "antd";
 
 interface LoginObserver {
   onLoginStateChanged: (isLoading: boolean, error?: string) => void;
@@ -12,6 +14,7 @@ interface LoginObserver {
 const LoginViewModel = (repo: AuthenRepo) => {
   const { onLogin, localStrings } = useAuth();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [observers] = useState<LoginObserver[]>([]);
@@ -28,11 +31,13 @@ const LoginViewModel = (repo: AuthenRepo) => {
   };
 
   const notifyLoading = (isLoading: boolean, error?: string) => {
-    observers.forEach(observer => observer.onLoginStateChanged(isLoading, error));
+    observers.forEach((observer) =>
+      observer.onLoginStateChanged(isLoading, error)
+    );
   };
 
   const notifySuccess = (data: any) => {
-    observers.forEach(observer => observer.onLoginSuccess(data));
+    observers.forEach((observer) => observer.onLoginSuccess(data));
   };
 
   const code = useMemo(() => searchParams.get("code"), [searchParams]);
@@ -47,8 +52,17 @@ const LoginViewModel = (repo: AuthenRepo) => {
         onLogin(res.data);
         notifyLoading(false);
         notifySuccess(res.data);
+        router.push("/home");
       } else {
-        notifyLoading(false, localStrings.Login.LoginFailed);
+        if (res?.error?.code === CustomStatusCode.EmailOrPasswordIsWrong) {
+          notifyLoading(false, localStrings.Login.LoginFailed);
+        } else if (
+          res?.error?.code === CustomStatusCode.AccountBlockedByAdmin
+        ) {
+          notifyLoading(false, localStrings.Login.AccountLocked);
+        } else {
+          notifyLoading(false, localStrings.Login.LoginFailed);
+        }
       }
     } catch (error: any) {
       notifyLoading(false, localStrings.Login.LoginFailed);
@@ -59,13 +73,16 @@ const LoginViewModel = (repo: AuthenRepo) => {
 
   const getGoogleLoginUrl = useMemo(() => {
     if (typeof window === "undefined") return "";
-    return `https://accounts.google.com/o/oauth2/v2/auth?client_id=${process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!}&redirect_uri=${window.location.origin}/login&response_type=code&scope=openid%20email%20profile&access_type=offline&prompt=consent`;
+    return `https://accounts.google.com/o/oauth2/v2/auth?client_id=${process.env
+      .NEXT_PUBLIC_GOOGLE_CLIENT_ID!}&redirect_uri=${
+      window.location.origin
+    }/login&response_type=code&scope=openid%20email%20profile&access_type=offline&prompt=consent`;
   }, [process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID]);
 
   const handleGoogleLogin = async (code: string) => {
     try {
       setGoogleLoading(true);
-      notifyLoading(true);  
+      notifyLoading(true);
       const res = await repo.googleLogin({
         authorization_code: code,
         platform: "web",
@@ -81,7 +98,7 @@ const LoginViewModel = (repo: AuthenRepo) => {
     } catch (error: any) {
       notifyLoading(false, localStrings.Login.LoginFailed);
     } finally {
-      setGoogleLoading(false); 
+      setGoogleLoading(false);
     }
   };
 

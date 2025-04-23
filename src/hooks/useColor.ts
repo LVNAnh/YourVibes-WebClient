@@ -4,13 +4,15 @@ const useColor = () => {
   const backgroundColor = '#ffffff'
   const lightGray = "#E2E2E2"
   const grayBackground = "#F6F6F6"
+  const pink = '#FFCCFF'
 
   return {
     brandPrimary,
     brandPrimaryTap,
     backgroundColor,
     lightGray,
-    grayBackground
+    grayBackground,
+    pink,
   }
 }
 

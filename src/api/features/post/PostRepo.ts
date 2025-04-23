@@ -21,13 +21,17 @@ interface IPostRepo {
   createPost: (
     data: CreatePostRequestModel
   ) => Promise<BaseApiResponseModel<PostResponseModel>>;
+
   getPosts: (
     data: GetUsersPostsRequestModel
   ) => Promise<BaseApiResponseModel<PostResponseModel[]>>;
+
   getPostById: (id: string) => Promise<BaseApiResponseModel<PostResponseModel>>;
+
   updatePost: (
     data: UpdatePostRequestModel
   ) => Promise<BaseApiResponseModel<PostResponseModel>>;
+
   deletePost: (id: string) => Promise<BaseApiResponseModel<any>>;
   likePost: (id: string) => Promise<BaseApiResponseModel<any>>;
   sharePost: (
@@ -37,6 +41,11 @@ interface IPostRepo {
   getPostLikes: (
     params: LikeUsersResponseModel
   ) => Promise<BaseApiResponseModel<LikeUsersModel[]>>;
+
+  //getPost TRENDING
+  getPostsTrending: (
+    data: GetUsersPostsRequestModel
+  ) => Promise<BaseApiResponseModel<PostResponseModel[]>>;
 
   //advertise
   advertisePost: (
@@ -67,6 +76,12 @@ export class PostRepo implements IPostRepo {
     data: GetUsersPostsRequestModel
   ): Promise<BaseApiResponseModel<PostResponseModel[]>> {
     return client.get(ApiPath.GET_POSTS, data);
+  }
+  // get post trending
+  async getPostsTrending(
+    data: GetUsersPostsRequestModel
+  ): Promise<BaseApiResponseModel<PostResponseModel[]>> {
+    return client.get(ApiPath.TRENDING_POST, data);
   }
 
   async getPostById(
@@ -116,8 +131,21 @@ export class PostRepo implements IPostRepo {
   async getAdvertisementPosts(
     data: GetUsersPostsRequestModel
   ): Promise<BaseApiResponseModel<PostResponseModel[]>> {
-    const filteredData = { ...data, is_advertisement: true };
-    return client.get(ApiPath.GET_POSTS, filteredData);
+    const data1 = { ...data, is_advertisement: 1 };
+    const data2 = { ...data, is_advertisement: 2 };
+  
+    const [response1, response2] = await Promise.all([
+      client.get(ApiPath.GET_POSTS, data1),
+      client.get(ApiPath.GET_POSTS, data2),
+    ]);
+  
+    const data1Array = Array.isArray(response1.data) ? response1.data : [];
+    const data2Array = Array.isArray(response2.data) ? response2.data : [];
+  
+    return {
+      ...response1,
+      data: [...data1Array, ...data2Array],
+    };
   }
 
   async getAdvertisePost(

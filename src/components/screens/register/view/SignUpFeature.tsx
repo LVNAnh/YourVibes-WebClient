@@ -14,8 +14,7 @@ const SignUpFeature: React.FC = () => {
   const { language, localStrings } = useAuth();
 
   const onSignUp = async (values: any) => {
-    try {
-      const success = await handleSignUp({
+     await handleSignUp({
         family_name: values.firstName,
         name: values.lastName,
         email: values.email,
@@ -24,37 +23,17 @@ const SignUpFeature: React.FC = () => {
         birthday: values.dob.format("DD/MM/YYYY"),
         otp: values.otp,
       });
-      if (success) {
-        message.success(`${localStrings.SignUp.SignUpSuccess}`);
-        router.push("/login"); // Chuyển hướng sang trang login
-      }
-    } catch (error: any) {
-      // Giữ xử lý lỗi 400
-      if (error.response?.status === 400) {
-        message.error(error.message);
-      } else {
-        message.error(`${localStrings.SignUp.SignUpFailed}`);
-      }
-    }
   };
 
   const onRequestOTP = async () => {
-    try {
+
       const email = form.getFieldValue("email");
       if (!email) {
         message.error(`${localStrings.Form.RequiredMessages.EmailRequiredMessage}`);
         return;
       }
       await verifyOTP({ email });
-      message.success(`${localStrings.SignUp.OTPSuccess}`);
-    } catch (error: any) {
-      // Giữ xử lý lỗi 400
-      if (error.response?.status === 400) {
-        message.error(error.message);
-      } else {
-        message.error(`${localStrings.SignUp.OTPFailed}`);
-      }
-    }
+    
   };
 
   return (

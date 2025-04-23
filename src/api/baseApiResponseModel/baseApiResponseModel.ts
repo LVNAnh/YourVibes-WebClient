@@ -18,6 +18,7 @@ export class Error {
   code?: number;
   message?: string;
   message_detail?: string;
+  details_err?: string;
 }
 
 export enum Privacy {

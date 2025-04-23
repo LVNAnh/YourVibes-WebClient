@@ -12,9 +12,12 @@ export const ApiPath = {
 
   //Friend
   FRIEND_REQUEST: getApiPath("users/friends/friend_request/"),
+  LIST_FRIEND_REQUEST: getApiPath("users/friends/friend_request"),
   FRIEND_RESPONSE: getApiPath("users/friends/friend_response/"),
   UNFRIEND: getApiPath("users/friends/"),
   LIST_FRIENDS: getApiPath("users/friends/"),
+  NON_FRIENDS: getApiPath("users/friends/non_friend"),
+  BIRTHDAY_FRIENDS: getApiPath("users/friends/birthday"),
 
   // Post
   CREATE_POST: getApiPath("posts/"),
@@ -24,6 +27,7 @@ export const ApiPath = {
   GET_USER_LIKES: getApiPath("posts/get_like_user/"),
   LIKE_POST: getApiPath("posts/like_post/"),
   SHARE_POST: getApiPath("posts/share_post/"),
+  TRENDING_POST: getApiPath("posts/trending"),
 
   //Advertisement
   ADVERTISE_POST: getApiPath("advertise/"),
@@ -38,6 +42,7 @@ export const ApiPath = {
   GET_COMMENTS: getApiPath("comments/"),
   DELETE_COMMENT: getApiPath("comments/"),
   GET_COMMENT_REPLIES: getApiPath("comments/"),
+
 
   //Like Comment
   GET_LIKE_COMMENT: getApiPath("comments/like_comment/"),
@@ -76,6 +81,7 @@ export const ApiPath = {
   GET_MESSAGE_BY_ID: getApiPath('messages/message/'),
   DELETE_MESSAGE: getApiPath('messages/message/'),
   CONNECT_TO_WEBSOCKET: getApiPath('messages/ws/'),
+  GET_WS_PATH_MESSAGE: getWSPath("messages/ws/"),
 
   //Suggestion
   GET_SUGGESTION: getApiPath('users/friends/suggestion'),

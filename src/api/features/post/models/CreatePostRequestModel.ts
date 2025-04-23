@@ -7,4 +7,6 @@ export interface CreatePostRequestModel {
     privacy?: Privacy
     location?: string
     media?: RcFile[]
+    created_at?: string
+    updated_at?: string
 }

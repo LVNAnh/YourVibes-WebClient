@@ -21,11 +21,12 @@ import ModalObjectProfile from "./ModalObjectProfile";
 import PostList from "./PostList";
 import { PostResponseModel } from "@/api/features/post/models/PostResponseModel";
 import ListFriends from "./ListFriends";
+import { CustomStatusCode } from "@/utils/helper/CustomStatus";
 
 const AboutTab = ({
   user,
   loading,
-  
+  profileLoading,
   friendCount,
   friends,
   resultCode,
@@ -37,6 +38,7 @@ const AboutTab = ({
 }: {
   user: UserModel;
   loading: boolean;
+  profileLoading: boolean;
   friendCount: number;
   friends: FriendResponseModel[];
   resultCode: number;
@@ -88,7 +90,7 @@ const AboutTab = ({
       
           <Row gutter={[16, 16]} align={"top"} justify={"center"}>
             <Col xs={24} xl={8} className="w-full xl:sticky xl:top-20" style={{ position: "sticky" }}>
-              {loading ? (
+              {profileLoading ? (
           <Skeleton active />
         ) : (
               <div
@@ -124,7 +126,7 @@ const AboutTab = ({
                         </div>
                       )}
                     </div>
-                    {resultCode === 20001 ? (
+                    {resultCode === CustomStatusCode.Success ? (
                       <div>
                         {/* // email */}
                         <div className="flex flex-row mb-2">
@@ -165,13 +167,13 @@ const AboutTab = ({
                           </span>
                         </div>
                       </div>
-                    ) : resultCode === 50016 ? (
+                    ) : resultCode === CustomStatusCode.UserPrivateAccess ? (
                       <span className="text-center">
                         {" "}
                         {`${user?.family_name || ""} ${user?.name || ""} ${localStrings.Public.HideInfo
                           }`}
                       </span>
-                    ) : resultCode === 50015 ? (
+                    ) : resultCode === CustomStatusCode.UserFriendAccess ? (
                       <span className="text-center">{`${user?.family_name || ""
                         } ${user?.name || ""} ${localStrings.Public.HideInfo} ${localStrings.Public.FriendOnly
                         }`}</span>
@@ -253,9 +255,7 @@ const AboutTab = ({
               </div>)}
             </Col>
           
-            <Col xs={24} xl={16} className="w-full">  {loading ? (
-         <Skeleton avatar paragraph={{ rows: 4 }} />
-        ) : (
+            <Col xs={24} xl={16} className="w-full"> 
               <PostList
                 loading={loading}
                 posts={posts}
@@ -264,7 +264,7 @@ const AboutTab = ({
                 fetchUserPosts={fetchUserPosts}
                 hasMore={hasMore}
                 setPosts={setPosts}
-              />)}
+              />
             </Col>
           </Row>
         

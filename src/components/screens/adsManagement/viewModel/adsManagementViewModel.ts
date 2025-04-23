@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import dayjs from "dayjs";
 import { GetUsersPostsRequestModel } from "@/api/features/post/models/GetUsersPostsModel";
 import { defaultPostRepo, PostRepo } from "@/api/features/post/PostRepo";
@@ -9,7 +9,15 @@ import {
   BillModel,
   StatisticEntry,
 } from "@/api/features/post/models/AdvertisePostModel";
-import { DateTransfer, getDayDiff } from "@/utils/helper/DateTransfer";
+import { DateTransfer } from "@/utils/helper/DateTransfer";
+
+// In-memory cache for API responses
+interface CacheEntry {
+  data: any;
+  timestamp: number;
+}
+const cache: Record<string, CacheEntry> = {};
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 interface MappedAd extends AdvertisePostResponseModel {
   post_id: string | undefined;
@@ -31,8 +39,8 @@ interface MappedAd extends AdvertisePostResponseModel {
 
 const useAdsManagement = (repo: PostRepo = defaultPostRepo) => {
   const { user, localStrings } = useAuth();
-
   const [loading, setLoading] = useState<boolean>(false);
+  const [loadingStatistics, setLoadingStatistics] = useState<boolean>(false);
   const [ads, setAds] = useState<MappedAd[]>([]);
   const [groupedAds, setGroupedAds] = useState<Record<string, MappedAd[]>>({});
   const [error, setError] = useState<string | null>(null);
@@ -41,26 +49,37 @@ const useAdsManagement = (repo: PostRepo = defaultPostRepo) => {
   const [isLoadingPostDetails, setIsLoadingPostDetails] = useState<boolean>(false);
   const [hasMore, setHasMore] = useState<boolean>(true);
 
-  const isAdActive = (ad: AdvertisePostResponseModel): boolean => {
+  const isAdActive = useCallback((ad: AdvertisePostResponseModel): boolean => {
     if (ad.status !== "success" || ad.bill?.status !== true) return false;
     const now = dayjs();
     const end = dayjs(ad.end_date);
     return end.isValid() && now.isBefore(end, "day");
-  };
+  }, []);
 
-  const getStatusAction = (ad: AdvertisePostResponseModel): string => {
-    if (ad.status !== "success" || ad.bill?.status !== true) {
-      return localStrings.Ads.Pending;
-    }
-    return isAdActive(ad) ? localStrings.Ads.Active : localStrings.Ads.Completed;
-  };
+  const getStatusAction = useCallback(
+    (ad: AdvertisePostResponseModel): string => {
+      if (ad.status !== "success" || ad.bill?.status !== true) {
+        return localStrings.Ads.Pending;
+      }
+      return isAdActive(ad) ? localStrings.Ads.Active : localStrings.Ads.Completed;
+    },
+    [isAdActive, localStrings.Ads]
+  );
 
   const fetchAdsByPostId = useCallback(
     async (postId: string): Promise<AdvertisePostResponseModel[] | null> => {
+      const cacheKey = `ads_${postId}`;
+      const cached = cache[cacheKey];
+      if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+        return cached.data;
+      }
+
       try {
         const params: AdvertisePostRequestModel = { post_id: postId };
         const response = await repo.getAdvertisePost(params);
-        return response?.data ? (Array.isArray(response.data) ? response.data : [response.data]) : null;
+        const data = response?.data ? (Array.isArray(response.data) ? response.data : [response.data]) : null;
+        cache[cacheKey] = { data, timestamp: Date.now() };
+        return data;
       } catch (err) {
         console.error(`Error fetching ads for postId ${postId}:`, err);
         return null;
@@ -71,15 +90,96 @@ const useAdsManagement = (repo: PostRepo = defaultPostRepo) => {
 
   const fetchAdStatistics = useCallback(
     async (advertiseId: string): Promise<AdvertisePostResponseModel | null> => {
+      const cacheKey = `stats_${advertiseId}`;
+      const cached = cache[cacheKey];
+      if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+        return cached.data;
+      }
+
       try {
         const response = await repo.getAdvertiseStatistics(advertiseId);
-        return response?.data || null;
+        const data = response?.data || null;
+        cache[cacheKey] = { data, timestamp: Date.now() };
+        return data;
       } catch (err) {
         console.error(`Error fetching statistics for advertiseId ${advertiseId}:`, err);
         return null;
       }
     },
     [repo]
+  );
+
+  const preloadStatistics = useCallback(
+    async (advertiseId: string) => {
+      setLoadingStatistics(true);
+      const cacheKey = `stats_${advertiseId}`;
+      const cached = cache[cacheKey];
+
+      if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+        setLoadingStatistics(false);
+        return cached.data;
+      }
+
+      try {
+        const data = await fetchAdStatistics(advertiseId);
+        if (data) {
+          setAds((prevAds) =>
+            prevAds.map((ad) =>
+              ad.id === advertiseId
+                ? {
+                    ...ad,
+                    statistics: data.statistics || [],
+                    total_reach: data.total_reach || ad.total_reach,
+                    total_clicks: data.total_clicks || ad.total_clicks,
+                    total_impression: data.total_impression || ad.total_impression,
+                    resultsData: data.statistics?.map((stat: StatisticEntry) => stat.clicks || 0) || ad.resultsData,
+                    reachData: data.statistics?.map((stat: StatisticEntry) => stat.reach || 0) || ad.reachData,
+                    impressionsData:
+                      data.statistics?.map((stat: StatisticEntry) => stat.impression || 0) || ad.impressionsData,
+                    labels:
+                      data.statistics?.map((stat: StatisticEntry) =>
+                        dayjs(stat.aggregation_date).format("HH:mm:ss DD/MM")
+                      ) || ad.labels,
+                  }
+                : ad
+            )
+          );
+
+          setGroupedAds((prevGrouped) => {
+            const newGrouped = { ...prevGrouped };
+            Object.keys(newGrouped).forEach((postId) => {
+              newGrouped[postId] = newGrouped[postId].map((ad) =>
+                ad.id === advertiseId
+                  ? {
+                      ...ad,
+                      statistics: data.statistics || [],
+                      total_reach: data.total_reach || ad.total_reach,
+                      total_clicks: data.total_clicks || ad.total_clicks,
+                      total_impression: data.total_impression || ad.total_impression,
+                      resultsData: data.statistics?.map((stat: StatisticEntry) => stat.clicks || 0) || ad.resultsData,
+                      reachData: data.statistics?.map((stat: StatisticEntry) => stat.reach || 0) || ad.reachData,
+                      impressionsData:
+                        data.statistics?.map((stat: StatisticEntry) => stat.impression || 0) || ad.impressionsData,
+                      labels:
+                        data.statistics?.map((stat: StatisticEntry) =>
+                          dayjs(stat.aggregation_date).format("HH:mm:ss DD/MM")
+                        ) || ad.labels,
+                    }
+                  : ad
+              );
+            });
+            return newGrouped;
+          });
+        }
+        return data;
+      } catch (err) {
+        console.error(`Error preloading statistics for advertiseId ${advertiseId}:`, err);
+        return null;
+      } finally {
+        setLoadingStatistics(false);
+      }
+    },
+    [fetchAdStatistics]
   );
 
   const fetchAds = useCallback(async () => {
@@ -114,23 +214,21 @@ const useAdsManagement = (repo: PostRepo = defaultPostRepo) => {
       const mappedAds: MappedAd[] = [];
       const grouped: Record<string, MappedAd[]> = {};
 
-      for (const post of filteredPosts) {
+      const adPromises = filteredPosts.map(async (post) => {
         const adsForPost = await fetchAdsByPostId(post.id || "");
         if (adsForPost) {
           grouped[post.id || ""] = [];
-          for (const ad of adsForPost) {
+          const mappedAdsForPost = adsForPost.map((ad) => {
             const startDate = ad.start_date ? DateTransfer(new Date(ad.start_date)) : "N/A";
             const endDate = ad.end_date ? DateTransfer(new Date(ad.end_date)) : "N/A";
             const daysRemaining = ad.day_remaining ?? 0;
 
-            const stats = ad.id ? await fetchAdStatistics(ad.id) : null;
-            const statistics: StatisticEntry[] = stats?.statistics || ad.statistics || [];
-
+            const statistics: StatisticEntry[] = ad.statistics || [];
             const resultsData = statistics.map((stat: StatisticEntry) => stat.clicks || 0);
             const reachData = statistics.map((stat: StatisticEntry) => stat.reach || 0);
             const impressionsData = statistics.map((stat: StatisticEntry) => stat.impression || 0);
             const labels = statistics.map((stat: StatisticEntry) =>
-              dayjs(stat.aggregation_date).format("DD/MM")
+              dayjs(stat.aggregation_date).format("HH:mm:ss DD/MM")
             );
 
             let adStatus = ad.status?.toString() || "N/A";
@@ -152,16 +250,20 @@ const useAdsManagement = (repo: PostRepo = defaultPostRepo) => {
               bill: ad.bill,
               isActive: isAdActive(ad),
               status_action: getStatusAction(ad),
-              total_reach: stats?.total_reach || ad.total_reach || 0,
-              total_clicks: stats?.total_clicks || ad.total_clicks || 0,
-              total_impression: stats?.total_impression || ad.total_impression || 0,
+              total_reach: ad.total_reach || 0,
+              total_clicks: ad.total_clicks || 0,
+              total_impression: ad.total_impression || 0,
             };
 
-            mappedAds.push(mappedAd);
-            grouped[post.id || ""].push(mappedAd);
-          }
+            return mappedAd;
+          });
+
+          mappedAds.push(...mappedAdsForPost);
+          grouped[post.id || ""].push(...mappedAdsForPost);
         }
-      }
+      });
+
+      await Promise.all(adPromises);
 
       setAds((prevAds) => (page === 1 ? mappedAds : [...prevAds, ...mappedAds]));
       setGroupedAds(grouped);
@@ -176,9 +278,17 @@ const useAdsManagement = (repo: PostRepo = defaultPostRepo) => {
         const newPostDetails: Record<string, AdvertisePostResponseModel> = {};
         await Promise.all(
           postIdsToFetch.map(async (postId) => {
+            const cacheKey = `post_${postId}`;
+            const cached = cache[cacheKey];
+            if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+              newPostDetails[postId] = cached.data;
+              return;
+            }
+
             const post = await repo.getPostById(postId);
             if (post?.data && (post.data.is_advertisement === 1 || post.data.is_advertisement === 2)) {
               newPostDetails[postId] = post.data as AdvertisePostResponseModel;
+              cache[cacheKey] = { data: post.data, timestamp: Date.now() };
             }
           })
         );
@@ -191,42 +301,63 @@ const useAdsManagement = (repo: PostRepo = defaultPostRepo) => {
       setLoading(false);
       setIsLoadingPostDetails(false);
     }
-  }, [user?.id, page, repo, postDetails, localStrings.Ads]);
+  }, [user?.id, page, repo, postDetails, localStrings.Ads, isAdActive, getStatusAction]);
 
-  const loadMoreAds = () => {
+  const loadMoreAds = useCallback(() => {
     if (hasMore && !loading) {
       setPage((prev) => prev + 1);
     }
-  };
+  }, [hasMore, loading]);
 
-  const advertisePost = async (params: AdvertisePostRequestModel) => {
-    try {
-      const res = await repo.advertisePost(params);
-      if (res?.data) {
-        setPage(1);
-        await fetchAds();
+  const advertisePost = useCallback(
+    async (params: AdvertisePostRequestModel) => {
+      try {
+        const res = await repo.advertisePost(params);
+        if (res?.data) {
+          setPage(1);
+          await fetchAds();
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Error creating advertisement");
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error creating advertisement");
-    }
-  };
+    },
+    [repo, fetchAds]
+  );
 
   useEffect(() => {
     if (user?.id) fetchAds();
   }, [fetchAds, user?.id]);
 
-  return {
-    loading,
-    ads,
-    groupedAds,
-    error,
-    advertisePost,
-    fetchAds,
-    loadMoreAds,
-    postDetails,
-    isLoadingPostDetails,
-    hasMore,
-  };
+  return useMemo(
+    () => ({
+      loading,
+      loadingStatistics,
+      ads,
+      groupedAds,
+      error,
+      advertisePost,
+      fetchAds,
+      loadMoreAds,
+      postDetails,
+      isLoadingPostDetails,
+      hasMore,
+      preloadStatistics,
+    }),
+    [
+      loading,
+      loadingStatistics,
+      ads,
+      groupedAds,
+      error,
+      advertisePost,
+      fetchAds,
+      loadMoreAds,
+      postDetails,
+      isLoadingPostDetails,
+      hasMore,
+      preloadStatistics,
+    ]
+  );
 };
 
 export default useAdsManagement;

@@ -1,8 +1,3 @@
-import { Select, Upload } from "antd";
-import Search from "antd/es/transfer/search";
-import { Chart } from "chart.js";
-import { changeLanguage } from "i18next";
-
 export const ENGLocalizedStrings = {
   Public: {
     All: "All",
@@ -13,7 +8,7 @@ export const ENGLocalizedStrings = {
     Close: "Close",
     Language: "Language: English",
     Post: "Post",
-    Friend: "Friend",
+    Friend: "Friends",
     Username: "Username",
     About: "About",
     Today: "Today, what do you want to do?",
@@ -75,6 +70,27 @@ export const ENGLocalizedStrings = {
     Delete: "Delete",
     GenericError: "An error occurred, please try again later!",
     Message: "Message",
+    Trending: "Trending",
+    People: "People",
+    Discover: "Discover People",
+    Connect: "Connect with new friends and expand your network",
+    UserNotFound: "User not found",
+    ShowOnlyUnrequested: "Show only unrequested friends",
+    SearchUsers: "Search users...",
+    ErrorLoading: "Error loading data!",
+    FriendRequests: "Friend Requests",
+    NoFriendRequests: "No friend requests",
+    Accept: "Accept",
+    Decline: "Decline",
+    AllUsers: "Expand your network",
+    Feed: "Feed",
+    Birtday: "Friends birthday reminder!",
+    Dayof: "Birthday:",
+    YearsOld: "years old",
+    NoBirthdays: "No birthdays today",
+    ConfirmLogoutMessage: "Are you sure you want to log out?",
+    ConfirmLogout: "Confirm Logout",
+    Logout: "Logout",
   },
 
   Suggested: {
@@ -89,7 +105,9 @@ export const ENGLocalizedStrings = {
     WhyFactor1: "Mutual friends",
     WhyFactor2: "Similar interests",
     WhyFactor3: "Recent activity on social media",
-    WhyConclusion: "We use an algorithm to find people you might know or want to connect with!"
+    WhyConclusion:
+      "We use an algorithm to find people you might know or want to connect with!",
+      NoMoreSuggestions: "No more suggestions!",
   },
 
   Form: {
@@ -151,6 +169,9 @@ export const ENGLocalizedStrings = {
     OTPSuccess: "OTP has been sent successfully!",
     OTPAlreadySent: "OTP has been sent and is valid for 10 minutes!",
     OTPFailed: "Sending OTP failed!",
+    OTPExpired: "OTP does not exist or has expired!",
+    OTPFailedUserHasRegistered: "The account already exists!",
+    OTPEmail: "OTP has been sent to your email",
     AlreadyHaveAccount: "Already have an account?",
     LoginNow: "Log in now!",
     AgreePolicies: "I agree to the YourVibes terms",
@@ -165,6 +186,7 @@ export const ENGLocalizedStrings = {
     EmptyContent: "Missing content or media file",
     PickImgFailed: "Pick images failed!",
     UploadImage: "Upload Image",
+    CensorPost: "Your post is under review, please wait.",
   },
   ObjectPostPrivacy: {
     PublicDescription: "Everyone on YourVibes",
@@ -201,10 +223,10 @@ export const ENGLocalizedStrings = {
     NoContent: "Content is empty",
     Sponsor: "Sponsored",
     NoPosts: "No posts found",
-    ShareContent:
-      "Enter the content you want to share...",
+    ShareContent: "Enter the content you want to share...",
     CharacterLimit: "10000 characters",
-    CharacterLimitR:"255 characters"
+    CharacterLimitR: "255 characters",
+    NoTrendingPosts: "No trending posts found",
   },
   PostDetails: {
     ViewReplies: "View replies",
@@ -290,6 +312,20 @@ export const ENGLocalizedStrings = {
       AcceptFriend: "accepted your friend request.",
       NewPost: "posted a new post.",
       LikeComment: "liked your comment: ",
+      NewPostPersonal: "Your post has been successfully published:",
+      NewPostError: "Your post encountered an error",
+      BlockCreatePost: "Your post has been blocked",
+      nsfw: "due to containing sensitive content",
+      political: "due to containing inappropriate political content",
+      violence: "due to containing violent content",
+      DeactivatePostContent:
+        "Your post has been blocked for violating our terms and conditions. If you believe this is a mistake, please contact our support team for review.",
+      ActivacePostContent:
+        "Your post has been reactivated after review. Thank you for your patience.",
+      DeactivateCommentContent:
+        "Your comment has been blocked for violating our terms and conditions. If you believe this is a mistake, please contact our support team for review.",
+      ActivaceCommentContent:
+        "Your comment has been reactivated after review. Thank you for your patience.",
     },
   },
   ListFriends: {
@@ -304,7 +340,7 @@ export const ENGLocalizedStrings = {
   Ads: {
     Ads: "Post Advertisement",
     TimeAndBudget: "Duration and Budget",
-    Minimum: "Minimum: {{price}}/day (Max date: 30 days)",
+    Minimum: "- Minimum: {{price}}/day (Max date: 30 days)",
     DaysAds: "Number of advertisement days:",
     TimeAds: "Advertisement duration: ",
     StartDate: "Start Date",
@@ -325,7 +361,8 @@ export const ENGLocalizedStrings = {
     PaymentSuccess: "Payment successful.",
     PaymentFailed: "Payment failed.",
     NoCampaign: "No campaign found",
-    AdvertisePostPending: "Advertisement is pending, please check the process again.",
+    AdvertisePostPending:
+      "Advertisement is pending, please check the process again.",
     CampaignStatus: "Campaign status",
     Click: "Total clicks",
     TotalReach: "Total reach",
@@ -352,6 +389,8 @@ export const ENGLocalizedStrings = {
     NoAdsHistory: "No ads history",
     HistoryforPost: "History for post",
     Discount: "Discount",
+    LimitDay:
+      "- 30-day limit because the MOMO payment method does not support payments beyond 30 days!",
   },
 
   Report: {
@@ -362,7 +401,8 @@ export const ENGLocalizedStrings = {
     ReportFailed: "Report failed!",
     ReportUserFailed: "Report failed, you have already reported this account!",
     ReportPostFailed: "Report failed, you have already reported this post!",
-    ReportCommentFailed: "Report failed, you have already reported this comment!",
+    ReportCommentFailed:
+      "Report failed, you have already reported this comment!",
     Note: "If you see a threat or someone in danger, don't hesitate to seek help and report to local emergency services before reporting to YourVibes.",
     placeholder: "Write your report here...",
     Report: "Report",
@@ -404,23 +444,23 @@ export const ENGLocalizedStrings = {
     MessageTooLong: "Message must not exceed 500 characters",
     GroupMinimumMembers: "Group chat must at least 3 members",
     GroupCreationFailed: "Create Chat Group Failed",
-    UserNotLoggedIn:"Please Login",
-    GroupSelectionInfo:"Choose at least 2 FRIENDS to create chat group",
-    SelectedFriends:"Selected",
-    MinimumFriends:"Minimum",
+    UserNotLoggedIn: "Please Login",
+    GroupSelectionInfo: "Choose at least 2 FRIENDS to create chat group",
+    SelectedFriends: "Selected",
+    MinimumFriends: "Minimum",
     Error: "Error",
     OK: "OK",
     Friends: "Friends",
     NoConversations: "No any Conversation exists",
     FriendsTab: "Friends",
-    AllContactsTab:"All Contacts",
+    AllContactsTab: "All Contacts",
     Conversations: "Conversations",
     SelectedMembers: "Selected Members",
     StartConversation: "Start Conversation",
     SelectConversation: "Select Conversation",
     SelectConversationToChat: "Select Conversation To Chat",
     TypeMessage: "Type a message",
-    ErrorFetchingConversations:"Error fetching conversation",
+    ErrorFetchingConversations: "Error fetching conversation",
     ConfirmDeleteMessage: "Confirm delete this message ?",
     ConfirmDeleteConversation: "Confirm delete this conversation ?",
     ConversationDeleted: "Conversation was deleted successfully!",
@@ -445,15 +485,40 @@ export const ENGLocalizedStrings = {
     ConversationNameRequired: "Conversation Name Required",
     GroupName: "Group Name",
     ConversationUpdated: "Conversation Updated",
-    MembersAdded: "Members Added",
-    AddMembers: "Add Members",
-    Add: "Add",
-    SelectFriendsToAdd: "Select Friends To Add",
-    NoFriendsToAdd: "No Friends To Add",
     ConfirmLeaveConversation: "Confirm Leave Conversation",
     LeftConversation: "Left Conversation",
+    AddMembers: "Add Members",
+    NoFriendsToAdd: "No Friends To Add",
+    SelectFriendsToAdd: "Select Friends To Add",
+    Add: "Add",
+    MembersAdded: "Members Added",
     CurrentMembers: "Current Members",
     NoMembersInConversation: "No Members In Conversation",
     ManageMembers: "Manage Members",
-  }
+    Today: "Today",
+    Yesterday: "Yesterday",
+  },
+  People: {
+    FetchUsersFailed: "Failed to fetch users!",
+    ErrorFetchingUsers: "Error fetching users!",
+    NoFriendRequests: "No friend requests",
+    ErrorFriendRequests: "Error fetching friend requests!",
+    AcceptScuccess: "Accept friend request successfully!",
+    AcceptFailed: "Accept friend request failed!",
+    AcceptError: "Error accepting friend request!",
+    DeclineSuccess: "Decline friend request successfully!",
+    DeclineFailed: "Decline friend request failed!",
+    DeclineError: "Error declining friend request!",
+    FriendRequestSent: "Friend request sent!",
+    FriendRequestSentSuccess: "Friend request sent successfully!",
+    FriendRequestFailed: "Friend request failed!",
+    FriendRequestError: "Error sending friend request!",
+    FriendRequestCanceled: "Friend request canceled!",
+    FriendRequestCancelFailed: "Friend request cancel failed!",
+    FriendRequestSentFailed: "Friend request sent failed!",
+    FriendRequestSentError: "Error sending friend request!",
+    FriendRequestCanceledSuccess: "Friend request canceled successfully!",
+    FriendRequestCanceledFailed: "Friend request cancel failed!",
+    FriendRequestCanceledError: "Error canceling friend request!",
+  },
 };
