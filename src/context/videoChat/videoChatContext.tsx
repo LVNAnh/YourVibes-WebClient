@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useRef, ReactNod
 import { io, Socket } from 'socket.io-client';
 import Peer from 'simple-peer';
 import { useAuth } from '@/context/auth/useAuth';
+import { Modal } from 'antd';
 
 interface VideoChatContextType {
   // Connection states
@@ -29,6 +30,7 @@ interface VideoChatContextType {
   createRoom: (conversationId: string) => void;
   joinRoom: (roomId: string) => void;
   leaveRoom: () => void;
+  initializeMediaStream: (constraints: MediaStreamConstraints) => Promise<MediaStream | null>;
 }
 
 const VideoChatContext = createContext<VideoChatContextType | undefined>(undefined);
@@ -147,14 +149,36 @@ export const VideoChatProvider: React.FC<{ children: ReactNode }> = ({ children 
       });
       
       socketRef.current.on('user-joined', ({ userId, roomId }) => {
-        console.log(`User ${userId} joined room ${roomId}`);
-        setRoomParticipants(prev => [...prev, userId]);
-        
-        // Create peer connection with the new user if we have local stream
+        console.group('User Joined Room Debug');
+        console.log('Participant Details:', {
+          currentUserId: userId,
+          loggedInUserId: user?.id,
+          roomId,
+          localStreamStatus: localStream ? {
+            videoTrackId: localStream.getVideoTracks()[0]?.id,
+            audioTrackId: localStream.getAudioTracks()[0]?.id,
+            videoTrackEnabled: localStream.getVideoTracks()[0]?.enabled,
+            videoTrackConstraints: localStream.getVideoTracks()[0]?.getConstraints()
+          } : 'No Local Stream'
+        });
+      
+        // Chỉ tạo peer nếu userId khác với user hiện tại
         if (localStream && userId !== user?.id) {
-          const peer = createPeer(userId, socketRef.current!.id, localStream, roomId);
-          peersRef.current[userId] = peer;
+          try {
+            const peer = createPeer(userId, socketRef.current!.id, localStream, roomId);
+            
+            console.log('Peer Creation Details:', {
+              targetUserId: userId,
+              peerInitiator: peer.initiator,
+              peerConnected: peer.connected
+            });
+      
+            peersRef.current[userId] = peer;
+          } catch (error) {
+            console.error('Peer Creation Error:', error);
+          }
         }
+        console.groupEnd();
       });
       
       socketRef.current.on('user-left', ({ userId, roomId }) => {
@@ -237,13 +261,23 @@ export const VideoChatProvider: React.FC<{ children: ReactNode }> = ({ children 
     stream: MediaStream, 
     roomId?: string
   ): Peer.Instance => {
+    console.group('Create Peer Connection');
+    console.log('Peer Details:', { to, from, roomId });
+    
     const peer = new Peer({
       initiator: true,
       trickle: false,
       stream
     });
-    
+
+    // Chi tiết hóa các sự kiện peer
     peer.on('signal', (signal) => {
+      console.log('Peer Signal Generated:', {
+        to,
+        signalType: signal.type,
+        signalLength: JSON.stringify(signal).length
+      });
+
       if (roomId) {
         socketRef.current?.emit('send-signal', {
           to,
@@ -260,26 +294,121 @@ export const VideoChatProvider: React.FC<{ children: ReactNode }> = ({ children 
         });
       }
     });
-    
+
     peer.on('stream', (remoteStream) => {
+      console.log('Remote Stream Received:', {
+        userId: to,
+        videoTracks: remoteStream.getVideoTracks().length,
+        audioTracks: remoteStream.getAudioTracks().length
+      });
+
       setRemoteStreams(prev => {
         const newStreams = new Map(prev);
         newStreams.set(to, remoteStream);
         return newStreams;
       });
     });
-    
+
+    peer.on('connect', () => {
+      console.log('Peer Connection Established:', to);
+    });
+
+    peer.on('error', (err) => {
+      console.error('Peer Connection Error:', {
+        to,
+        errorMessage: err.message
+      });
+
+      Modal.error({
+        title: 'Lỗi Kết Nối Video',
+        content: `Không thể thiết lập kết nối video với ${to}. ${err.message}`
+      });
+    });
+
+    console.groupEnd();
     return peer;
   };
   
   // Initialize media stream
   const initializeMediaStream = async (constraints: MediaStreamConstraints) => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      // Kiểm tra và liệt kê thiết bị
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(device => device.kind === 'videoinput');
+      
+      console.group('Media Device Check');
+      console.log('Available Video Devices:', videoDevices.map(device => ({
+        deviceId: device.deviceId,
+        label: device.label || 'Unknown Device'
+      })));
+      console.groupEnd();
+
+      // Nếu không có camera, hiển thị thông báo
+      if (videoDevices.length === 0) {
+        Modal.error({
+          title: 'Không Tìm Thấy Camera',
+          content: 'Vui lòng kết nối camera hoặc kiểm tra cài đặt thiết bị.',
+        });
+        return null;
+      }
+
+      // Thử nghiệm với từng camera
+      const streamConstraints: MediaStreamConstraints = {
+        video: videoDevices.length > 0 ? { 
+          deviceId: videoDevices[0].deviceId 
+        } : false,
+        audio: true
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(streamConstraints);
+      
+      console.group('Media Stream Details');
+      console.log('Stream Initialized:', {
+        videoTracks: stream.getVideoTracks().map(track => ({
+          id: track.id,
+          label: track.label,
+          enabled: track.enabled,
+          constraints: track.getConstraints()
+        })),
+        audioTracks: stream.getAudioTracks().map(track => ({
+          id: track.id,
+          label: track.label,
+          enabled: track.enabled
+        }))
+      });
+      console.groupEnd();
+
       setLocalStream(stream);
       return stream;
     } catch (error) {
-      console.error('Error getting media stream:', error);
+      console.error('Media Stream Initialization Error:', error);
+      
+      // Xử lý chi tiết các loại lỗi
+      if (error instanceof DOMException) {
+        let errorMessage = 'Lỗi không xác định khi truy cập camera.';
+        
+        switch (error.name) {
+          case 'NotAllowedError':
+            errorMessage = 'Vui lòng cấp quyền truy cập camera và microphone trong trình duyệt.';
+            break;
+          case 'NotFoundError':
+            errorMessage = 'Không tìm thấy camera. Vui lòng kiểm tra kết nối thiết bị.';
+            break;
+          case 'OverconstrainedError':
+            errorMessage = 'Không thể sử dụng cấu hình camera hiện tại.';
+            break;
+        }
+
+        Modal.error({
+          title: 'Lỗi Truy Cập Camera',
+          content: errorMessage,
+          onOk: () => {
+            // Hướng dẫn người dùng mở cài đặt quyền
+            window.open('chrome://settings/content/camera', '_blank');
+          }
+        });
+      }
+      
       return null;
     }
   };
@@ -554,7 +683,8 @@ export const VideoChatProvider: React.FC<{ children: ReactNode }> = ({ children 
         endCall,
         createRoom,
         joinRoom,
-        leaveRoom
+        leaveRoom,
+        initializeMediaStream,
       }}
     >
       {children}

@@ -9,6 +9,7 @@ import { WebSocketProvider } from "@/context/socket/useSocket";
 import { VideoChatProvider } from '@/context/videoChat/videoChatContext';
 import IncomingCallModal from "@/components/common/VideoChat/IncomingCallModal";
 import VideoCallModal from "@/components/common/VideoChat/VideoCallModal";
+import MessengerVideoCallModal from "@/components/common/VideoChat/MessengerVideoCallModal";
 
 
 export const metadata: Metadata = {
@@ -42,6 +43,7 @@ export default function RootLayout({
                     <body>{children}</body>
                   </PostProvider>
                   <IncomingCallModal />
+                  <MessengerVideoCallModal />
               <VideoCallModal />
               </VideoChatProvider>
             </WebSocketProvider>
