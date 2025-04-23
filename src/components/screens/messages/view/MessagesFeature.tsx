@@ -858,6 +858,8 @@ const MessagesFeature: React.FC = () => {
     fromUser?: FriendResponseModel;
   } | null>(null);
   const socketRef = useRef<any>(null);
+  const [socketInitialized, setSocketInitialized] = useState(false);
+  const [inCall, setInCall] = useState(false);
   const {
     fetchConversations,
     deleteMessage,
@@ -1197,6 +1199,8 @@ const MessagesFeature: React.FC = () => {
 
   const handleVideoCall = (conversation: ConversationResponseModel) => {
     if (!conversation?.id || !user?.id) return;
+
+    setInCall(true);
   
     // Xác định người nhận cuộc gọi (trong trường hợp chat 1-1)
     const conversationMessages = getMessagesForConversation(conversation.id);
@@ -1714,6 +1718,13 @@ const MessagesFeature: React.FC = () => {
           
           // Khi cửa sổ đóng
           window.onbeforeunload = () => {
+            // Gửi thông báo về trang chính rằng cuộc gọi đã kết thúc
+            try {
+              window.opener && window.opener.postMessage('call_ended', '*');
+            } catch (e) {
+              console.error('Error posting message to opener:', e);
+            }
+            
             endCall(true);
           };
           
@@ -1737,7 +1748,9 @@ const MessagesFeature: React.FC = () => {
     const checkWindowClosed = setInterval(() => {
       if (videoCallWindow.closed) {
         clearInterval(checkWindowClosed);
-        console.log('Video call window closed, re-initializing socket...');
+        console.log('Video call window closed, will reinitialize socket');
+        setInCall(false); 
+        
         setTimeout(() => {
           initializeSocket();
         }, 1000);
@@ -1747,6 +1760,8 @@ const MessagesFeature: React.FC = () => {
 
   const handleAcceptCall = () => {
     if (!incomingCall) return;
+
+    setInCall(true);
     
     const width = 800;
     const height = 600;
@@ -2109,6 +2124,13 @@ const MessagesFeature: React.FC = () => {
           
           // Khi cửa sổ đóng
           window.onbeforeunload = () => {
+            // Gửi thông báo về trang chính rằng cuộc gọi đã kết thúc
+            try {
+              window.opener && window.opener.postMessage('call_ended', '*');
+            } catch (e) {
+              console.error('Error posting message to opener:', e);
+            }
+            
             endCall(true);
           };
           
@@ -2131,6 +2153,19 @@ const MessagesFeature: React.FC = () => {
     
     // Đánh dấu đã xử lý cuộc gọi
     setIncomingCall(null);
+
+    const checkWindowClosed = setInterval(() => {
+      if (videoCallWindow.closed) {
+        clearInterval(checkWindowClosed);
+        console.log('Video call window closed, will reinitialize socket');
+        setInCall(false); // Đánh dấu là không còn trong cuộc gọi
+        
+        // Chờ một chút trước khi khởi tạo lại socket
+        setTimeout(() => {
+          initializeSocket();
+        }, 1000);
+      }
+    }, 1000);
   };
   
   const handleDeclineCall = () => {
@@ -2142,12 +2177,13 @@ const MessagesFeature: React.FC = () => {
       });
     }
     
+    // Reset trạng thái cuộc gọi
     setIncomingCall(null);
     
-    // Khởi tạo lại socket để đảm bảo có thể nhận cuộc gọi tiếp theo
+    // Khởi tạo lại socket với timeout ngắn hơn
     setTimeout(() => {
       initializeSocket();
-    }, 1000);
+    }, 500);
   };
 
   useEffect(() => {
@@ -2171,74 +2207,119 @@ const MessagesFeature: React.FC = () => {
   }, [incomingCall]);
 
   const initializeSocket = () => {
-    if (user?.id && (!socketRef.current || socketRef.current.disconnected)) {
-      console.log('Initializing new socket connection...');
-      const socketUrl = process.env.NEXT_PUBLIC_VIDEO_CHAT_SERVER || 'http://localhost:5000';
+    if (!user?.id) return;
+    
+    console.log('Initializing new socket connection...');
+    
+    // Luôn đóng socket cũ
+    if (socketRef.current) {
+      console.log('Closing existing socket connection');
+      socketRef.current.off('call-incoming'); // Quan trọng: gỡ bỏ event listener cũ
+      socketRef.current.disconnect();
+    }
+    
+    // Tạo socket mới
+    const socketUrl = process.env.NEXT_PUBLIC_VIDEO_CHAT_SERVER || 'http://localhost:5000';
+    socketRef.current = io(socketUrl);
+    
+    // Đăng ký người dùng
+    socketRef.current.emit('register', user.id);
+    console.log('Registered user with socket:', user.id);
+    
+    // Lắng nghe cuộc gọi đến
+    socketRef.current.on('call-incoming', async ({ from, signalData, callType }) => {
+      console.log('Incoming call received from:', from);
       
-      // Đóng socket cũ nếu có
-      if (socketRef.current) {
-        socketRef.current.disconnect();
+      // Nếu đang trong cuộc gọi, từ chối cuộc gọi mới
+      if (inCall) {
+        console.log('Already in a call, declining new call');
+        socketRef.current.emit('call-declined', {
+          to: from,
+          from: user.id,
+          reason: 'Người dùng đang trong một cuộc gọi khác'
+        });
+        return;
       }
       
-      // Tạo socket mới
-      socketRef.current = io(socketUrl);
-      
-      // Đăng ký người dùng
-      socketRef.current.emit('register', user.id);
-      
-      // Lắng nghe cuộc gọi đến
-      socketRef.current.on('call-incoming', async ({ from, signalData, callType }: SocketCallPayload) => {
-        console.log('Incoming call received from:', from);
-        if (callType === 'video') {
-          // Tìm thông tin người gọi (giữ nguyên code hiện tại)
-          try {
-            let fromUser: FriendResponseModel | undefined;
-            
-            if (conversations.length > 0) {
-              // Tìm trong các tin nhắn hiện có
-              for (const conv of conversations) {
-                if (!conv.id) continue;
-                
-                const messages = getMessagesForConversation(conv.id);
-                const fromMessage = messages.find(m => m.user_id === from && !m.isDateSeparator);
-                
-                if (fromMessage && fromMessage.user) {
-                  fromUser = {
-                    id: fromMessage.user.id,
-                    name: fromMessage.user.name,
-                    family_name: fromMessage.user.family_name,
-                    avatar_url: fromMessage.user.avatar_url
-                  } as FriendResponseModel;
-                  break;
-                }
+      if (callType === 'video') {
+        try {
+          let fromUser: FriendResponseModel | undefined;
+          
+          if (conversations.length > 0) {
+            // Tìm trong các tin nhắn hiện có
+            for (const conv of conversations) {
+              if (!conv.id) continue;
+              
+              const messages = getMessagesForConversation(conv.id);
+              const fromMessage = messages.find(m => m.user_id === from && !m.isDateSeparator);
+              
+              if (fromMessage && fromMessage.user) {
+                fromUser = {
+                  id: fromMessage.user.id,
+                  name: fromMessage.user.name,
+                  family_name: fromMessage.user.family_name,
+                  avatar_url: fromMessage.user.avatar_url
+                } as FriendResponseModel;
+                break;
               }
             }
-            
-            setIncomingCall({
-              from,
-              signalData,
-              fromUser
-            });
-          } catch (error) {
-            console.error('Error handling incoming call:', error);
-            setIncomingCall({
-              from,
-              signalData
-            });
           }
+          
+          console.log('Setting incoming call state');
+          setIncomingCall({
+            from,
+            signalData,
+            fromUser
+          });
+        } catch (error) {
+          console.error('Error handling incoming call:', error);
+          setIncomingCall({
+            from,
+            signalData
+          });
         }
-      });
+      }
+    });
+    
+    // Khi socket kết nối thành công
+    socketRef.current.on('connect', () => {
+      console.log('Socket connected successfully');
+      setSocketInitialized(true);
+    });
+    
+    // Khi socket mất kết nối
+    socketRef.current.on('disconnect', () => {
+      console.log('Socket disconnected');
+      setSocketInitialized(false);
       
-      // Thêm sự kiện cho kết nối bị mất
-      socketRef.current.on('disconnect', () => {
-        console.log('Socket disconnected, will try to reconnect...');
-        // Thử kết nối lại sau 2 giây
+      // Chỉ tự động kết nối lại nếu không đang trong cuộc gọi
+      if (!inCall) {
+        console.log('Will try to reconnect in 2 seconds...');
         setTimeout(() => {
           initializeSocket();
         }, 2000);
-      });
-    }
+      }
+    });
   };
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data === 'call_ended') {
+        console.log('Received notification that call has ended');
+        setInCall(false);
+        // Khởi tạo lại socket sau khi cuộc gọi kết thúc
+        setTimeout(() => {
+          initializeSocket();
+        }, 1000);
+      }
+    };
+    
+    window.addEventListener('message', handleMessage);
+    
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, []);
 
   return (
     <Layout style={{ height: "calc(100vh - 64px)", background: backgroundColor }}>
