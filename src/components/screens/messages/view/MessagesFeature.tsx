@@ -914,6 +914,7 @@ const MessagesFeature: React.FC = () => {
     if (user?.id) {
       const socketUrl = process.env.NEXT_PUBLIC_VIDEO_CHAT_SERVER || 'http://localhost:5000';
       socketRef.current = io(socketUrl);
+      initializeSocket();
       
       // Đăng ký người dùng
       socketRef.current.emit('register', user.id);
@@ -966,6 +967,7 @@ const MessagesFeature: React.FC = () => {
       return () => {
         if (socketRef.current) {
           socketRef.current.disconnect();
+          socketRef.current = null;
         }
       };
     }
@@ -1226,6 +1228,15 @@ const MessagesFeature: React.FC = () => {
     
     if (!videoCallWindow) {
       message.error("Không thể mở cửa sổ video call. Vui lòng kiểm tra trình chặn popup.");
+      // Từ chối cuộc gọi vì không thể mở cửa sổ
+      if (socketRef.current) {
+        socketRef.current.emit('call-declined', {
+          to: incomingCall.from,
+          from: user?.id,
+          reason: 'Không thể mở cửa sổ video call'
+        });
+      }
+      setIncomingCall(null);
       return;
     }
     
@@ -1708,12 +1719,30 @@ const MessagesFeature: React.FC = () => {
           
           // Khởi tạo
           initialize();
+
+          window.addEventListener('beforeunload', function() {
+            // Đảm bảo socket được đóng đúng cách
+            if (socket) {
+              endCall(true);
+              socket.disconnect();
+            }
+          });
         </script>
       </body>
       </html>
     `);
     
     videoCallWindow.document.close();
+
+    const checkWindowClosed = setInterval(() => {
+      if (videoCallWindow.closed) {
+        clearInterval(checkWindowClosed);
+        console.log('Video call window closed, re-initializing socket...');
+        setTimeout(() => {
+          initializeSocket();
+        }, 1000);
+      }
+    }, 1000);
   };
 
   const handleAcceptCall = () => {
@@ -2085,6 +2114,14 @@ const MessagesFeature: React.FC = () => {
           
           // Khởi tạo
           initialize();
+
+          window.addEventListener('beforeunload', function() {
+            // Đảm bảo socket được đóng đúng cách
+            if (socket) {
+              endCall(true);
+              socket.disconnect();
+            }
+          });
         </script>
       </body>
       </html>
@@ -2106,6 +2143,11 @@ const MessagesFeature: React.FC = () => {
     }
     
     setIncomingCall(null);
+    
+    // Khởi tạo lại socket để đảm bảo có thể nhận cuộc gọi tiếp theo
+    setTimeout(() => {
+      initializeSocket();
+    }, 1000);
   };
 
   useEffect(() => {
@@ -2127,6 +2169,76 @@ const MessagesFeature: React.FC = () => {
       }
     };
   }, [incomingCall]);
+
+  const initializeSocket = () => {
+    if (user?.id && (!socketRef.current || socketRef.current.disconnected)) {
+      console.log('Initializing new socket connection...');
+      const socketUrl = process.env.NEXT_PUBLIC_VIDEO_CHAT_SERVER || 'http://localhost:5000';
+      
+      // Đóng socket cũ nếu có
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
+      
+      // Tạo socket mới
+      socketRef.current = io(socketUrl);
+      
+      // Đăng ký người dùng
+      socketRef.current.emit('register', user.id);
+      
+      // Lắng nghe cuộc gọi đến
+      socketRef.current.on('call-incoming', async ({ from, signalData, callType }: SocketCallPayload) => {
+        console.log('Incoming call received from:', from);
+        if (callType === 'video') {
+          // Tìm thông tin người gọi (giữ nguyên code hiện tại)
+          try {
+            let fromUser: FriendResponseModel | undefined;
+            
+            if (conversations.length > 0) {
+              // Tìm trong các tin nhắn hiện có
+              for (const conv of conversations) {
+                if (!conv.id) continue;
+                
+                const messages = getMessagesForConversation(conv.id);
+                const fromMessage = messages.find(m => m.user_id === from && !m.isDateSeparator);
+                
+                if (fromMessage && fromMessage.user) {
+                  fromUser = {
+                    id: fromMessage.user.id,
+                    name: fromMessage.user.name,
+                    family_name: fromMessage.user.family_name,
+                    avatar_url: fromMessage.user.avatar_url
+                  } as FriendResponseModel;
+                  break;
+                }
+              }
+            }
+            
+            setIncomingCall({
+              from,
+              signalData,
+              fromUser
+            });
+          } catch (error) {
+            console.error('Error handling incoming call:', error);
+            setIncomingCall({
+              from,
+              signalData
+            });
+          }
+        }
+      });
+      
+      // Thêm sự kiện cho kết nối bị mất
+      socketRef.current.on('disconnect', () => {
+        console.log('Socket disconnected, will try to reconnect...');
+        // Thử kết nối lại sau 2 giây
+        setTimeout(() => {
+          initializeSocket();
+        }, 2000);
+      });
+    }
+  };
 
   return (
     <Layout style={{ height: "calc(100vh - 64px)", background: backgroundColor }}>
