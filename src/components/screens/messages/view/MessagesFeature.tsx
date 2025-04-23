@@ -1890,18 +1890,42 @@ const MessagesFeature: React.FC = () => {
           
           // Hàm khởi tạo
           async function initialize() {
+            console.log('Initializing video call...');
             try {
+              console.log('Requesting camera and microphone access...');
               // Lấy video và audio từ người dùng
-              localStream = await navigator.mediaDevices.getUserMedia({ 
-                video: true, 
-                audio: true 
-              });
+              try {
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                  video: true, 
+                  audio: true 
+                });
+                console.log('Camera and microphone access granted');
+              } catch (mediaError) {
+                console.error('Media error:', mediaError);
+                // Thử lại với chỉ audio nếu video thất bại
+                alert('Không thể truy cập camera. Đang thử lại với chỉ microphone...');
+                try {
+                  localStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: false, 
+                    audio: true 
+                  });
+                  console.log('Audio-only access granted');
+                } catch (audioError) {
+                  console.error('Audio-only error:', audioError);
+                  alert('Không thể truy cập microphone. Vui lòng kiểm tra quyền truy cập và làm mới trang.');
+                  return;
+                }
+              }
               
               // Hiển thị video người dùng
-              localVideo.srcObject = localStream;
+              if (localStream) {
+                localVideo.srcObject = localStream;
+                console.log('Local video stream set to video element');
+              }
               
               // Đăng ký người dùng
               socket.emit('register', myUserId);
+              console.log('Registered user with socket:', myUserId);
               
               // Thiết lập các sự kiện Socket.IO
               setupSocketEvents();
@@ -1910,23 +1934,18 @@ const MessagesFeature: React.FC = () => {
               setupUIEvents();
               
               // Trả lời cuộc gọi ngay
+              console.log('Auto-answering call...');
               answerCall();
             } catch (error) {
-              console.error('Không thể khởi tạo video call:', error);
-              alert('Không thể truy cập camera hoặc microphone. Vui lòng kiểm tra quyền truy cập.');
-              socket.emit('call-declined', {
-                to: callerId,
-                from: myUserId,
-                reason: 'Không thể truy cập camera hoặc microphone'
-              });
-              window.close();
+              console.error('General initialization error:', error);
+              alert('Không thể khởi tạo video call: ' + error.message);
             }
           }
           
           // Thiết lập các sự kiện Socket.IO
           function setupSocketEvents() {
             // Cuộc gọi kết thúc
-            socket.on('call-ended', ({ from }: SocketEndCallPayload) => {
+            socket.on('call-ended', ({ from }) => {
               if (from === callerId) {
                 endCall(false);
               }
@@ -1985,40 +2004,51 @@ const MessagesFeature: React.FC = () => {
           
           // Trả lời cuộc gọi
           function answerCall() {
-            callAccepted = true;
-            
-            // Tạo peer connection
-            peer = new SimplePeer({
-              initiator: false,
-              trickle: false,
-              stream: localStream
-            });
-            
-            // Khi có tín hiệu cục bộ
-            peer.on('signal', (data) => {
-              // Gửi tín hiệu đến người gọi
-              socket.emit('call-accepted', {
-                to: callerId,
-                from: myUserId,
-                signalData: data
+            try {
+              console.log('Answering call...');
+              callAccepted = true;
+              
+              // Tạo peer connection
+              peer = new SimplePeer({
+                initiator: false,
+                trickle: false,
+                stream: localStream
               });
-            });
-            
-            // Khi nhận được stream từ bạn
-            peer.on('stream', (stream) => {
-              remoteStream = stream;
-              remoteVideo.srcObject = stream;
-            });
-            
-            // Xử lý lỗi
-            peer.on('error', (err) => {
-              console.error('Peer connection error:', err);
-              alert('Có lỗi xảy ra với kết nối. Vui lòng thử lại sau.');
-              window.close();
-            });
-            
-            // Signal với dữ liệu từ người gọi
-            peer.signal(callerSignalData);
+              
+              console.log('Peer created successfully');
+              
+              // Khi có tín hiệu cục bộ
+              peer.on('signal', (data) => {
+                console.log('Generated signal to send back to caller:', data);
+                // Gửi tín hiệu đến người gọi
+                socket.emit('call-accepted', {
+                  to: callerId,
+                  from: myUserId,
+                  signalData: data
+                });
+              });
+              
+              // Khi nhận được stream từ bạn
+              peer.on('stream', (stream) => {
+                console.log('Received remote stream');
+                remoteStream = stream;
+                remoteVideo.srcObject = stream;
+              });
+              
+              // Xử lý lỗi
+              peer.on('error', (err) => {
+                console.error('Peer connection error:', err);
+                alert('Có lỗi xảy ra với kết nối. Vui lòng thử lại sau.');
+                window.close();
+              });
+              
+              console.log('Signaling with caller data:', callerSignalData);
+              // Signal với dữ liệu từ người gọi
+              peer.signal(callerSignalData);
+            } catch (error) {
+              console.error('Error in answerCall:', error);
+              alert('Có lỗi khi kết nối cuộc gọi: ' + error.message);
+            }
           }
           
           // Kết thúc cuộc gọi
