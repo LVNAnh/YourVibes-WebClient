@@ -6,10 +6,6 @@ import "./globals.css";
 import { ConfigProvider } from "antd";
 import useColor from "@/hooks/useColor";
 import { WebSocketProvider } from "@/context/socket/useSocket";
-import { VideoChatProvider } from '@/context/videoChat/videoChatContext';
-import IncomingCallModal from "@/components/common/VideoChat/IncomingCallModal";
-import VideoCallModal from "@/components/common/VideoChat/VideoCallModal";
-import MessengerVideoCallModal from "@/components/common/VideoChat/MessengerVideoCallModal";
 
 
 export const metadata: Metadata = {
@@ -38,14 +34,9 @@ export default function RootLayout({
         >
           <AuthProvider>
             <WebSocketProvider>
-              <VideoChatProvider>
-                  <PostProvider>
-                    <body>{children}</body>
-                  </PostProvider>
-                  <IncomingCallModal />
-                  <MessengerVideoCallModal />
-              <VideoCallModal />
-              </VideoChatProvider>
+                <PostProvider>
+                  <body>{children}</body>
+                </PostProvider>
             </WebSocketProvider>
           </AuthProvider>
         </ConfigProvider>
