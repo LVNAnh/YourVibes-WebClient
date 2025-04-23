@@ -8,11 +8,12 @@ import { defaultProfileRepo } from '@/api/features/profile/ProfileRepository';
 import { FriendResponseModel } from '@/api/features/profile/model/FriendReponseModel';
 import { useAuth } from '@/context/auth/useAuth';
 import useColor from '@/hooks/useColor';
-import { EllipsisOutlined, DeleteOutlined, InboxOutlined, SendOutlined, SearchOutlined, ArrowLeftOutlined, PlusOutlined, SmileOutlined, VideoCameraOutlined } from '@ant-design/icons';
+import { EllipsisOutlined, DeleteOutlined, InboxOutlined, SendOutlined, SearchOutlined, ArrowLeftOutlined, PlusOutlined, SmileOutlined, VideoCameraOutlined, CloseOutlined } from '@ant-design/icons';
 import { Empty, Layout, Skeleton, Typography, Popover, Badge, Menu, Dropdown, Popconfirm, Input, Button, Upload, Modal, Form, List, Avatar, Spin, message, Checkbox, Tabs } from 'antd';
 import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react';
 import { useSearchParams } from 'next/navigation';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useRef  } from 'react';
+import io from 'socket.io-client';
 
 interface AddMemberModalProps {
   visible: boolean;
@@ -851,6 +852,12 @@ const MessagesFeature: React.FC = () => {
   const searchParams = useSearchParams(); // Thêm để lấy query params
   const [emojiPickerVisible, setEmojiPickerVisible] = useState(false);
   const [existingMembers, setExistingMembers] = useState<FriendResponseModel[]>([]);
+  const [incomingCall, setIncomingCall] = useState<{
+    from: string;
+    signalData: any;
+    fromUser?: FriendResponseModel;
+  } | null>(null);
+  const socketRef = useRef<any>(null);
   const {
     fetchConversations,
     deleteMessage,
@@ -889,8 +896,80 @@ const MessagesFeature: React.FC = () => {
   const [addMemberModalVisible, setAddMemberModalVisible] = useState(false);
   const [existingMemberIds, setExistingMemberIds] = useState<string[]>([]);
 
+  interface SocketCallPayload {
+    from: string;
+    signalData: any; // Hoặc có thể định nghĩa chi tiết hơn cho signalData
+    callType: 'video' | 'audio';
+  }
+  
+  interface SocketEndCallPayload {
+    from: string;
+    reason?: string;
+  }
+
   // Lấy conversation_id từ query params
   const conversationIdFromUrl = searchParams.get("conversation_id");
+
+  useEffect(() => {
+    if (user?.id) {
+      const socketUrl = process.env.NEXT_PUBLIC_VIDEO_CHAT_SERVER || 'http://localhost:5000';
+      socketRef.current = io(socketUrl);
+      
+      // Đăng ký người dùng
+      socketRef.current.emit('register', user.id);
+      
+      // Lắng nghe cuộc gọi đến
+      socketRef.current.on('call-incoming', async ({ from, signalData, callType }: SocketCallPayload) => {
+        if (callType === 'video') {
+          // Tìm thông tin người gọi
+          try {
+            let fromUser: FriendResponseModel | undefined;
+            
+            if (conversations.length > 0) {
+              // Tìm trong các tin nhắn hiện có
+              for (const conv of conversations) {
+                if (!conv.id) continue;
+                
+                const messages = getMessagesForConversation(conv.id);
+                const fromMessage = messages.find(m => m.user_id === from && !m.isDateSeparator);
+                
+                if (fromMessage && fromMessage.user) {
+                  fromUser = {
+                    id: fromMessage.user.id,
+                    name: fromMessage.user.name,
+                    family_name: fromMessage.user.family_name,
+                    avatar_url: fromMessage.user.avatar_url
+                  } as FriendResponseModel;
+                  break;
+                }
+              }
+            }
+            
+            // Nếu không tìm thấy, có thể gọi API để lấy thông tin user (nếu cần)
+            
+            setIncomingCall({
+              from,
+              signalData,
+              fromUser
+            });
+          } catch (error) {
+            console.error('Error handling incoming call:', error);
+            setIncomingCall({
+              from,
+              signalData
+            });
+          }
+        }
+      });
+      
+      
+      return () => {
+        if (socketRef.current) {
+          socketRef.current.disconnect();
+        }
+      };
+    }
+  }, [user?.id]);
 
   useEffect(() => {
     fetchConversations();
@@ -980,8 +1059,6 @@ const MessagesFeature: React.FC = () => {
       handleSendMessage();
     }
   };
-
-
 
   const handleBackToConversations = () => {
     setShowConversation(true);
@@ -1638,6 +1715,388 @@ const MessagesFeature: React.FC = () => {
     
     videoCallWindow.document.close();
   };
+
+  const handleAcceptCall = () => {
+    if (!incomingCall) return;
+    
+    const width = 800;
+    const height = 600;
+    const left = (window.innerWidth - width) / 2;
+    const top = (window.innerHeight - height) / 2;
+    
+    const videoCallWindow = window.open(
+      '', 
+      '_blank',
+      `width=${width},height=${height},left=${left},top=${top}`
+    );
+    
+    if (!videoCallWindow) {
+      message.error("Không thể mở cửa sổ video call. Vui lòng kiểm tra trình chặn popup.");
+      // Từ chối cuộc gọi vì không thể mở cửa sổ
+      socketRef.current.emit('call-declined', {
+        to: incomingCall.from,
+        from: user?.id,
+        reason: 'Không thể mở cửa sổ video call'
+      });
+      setIncomingCall(null);
+      return;
+    }
+    
+    // Lưu signal data để truyền vào cửa sổ mới
+    const signalData = incomingCall.signalData;
+    
+    // Viết nội dung HTML cho trang video call
+    videoCallWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Video Call | ${incomingCall.fromUser ? `${incomingCall.fromUser.family_name || ''} ${incomingCall.fromUser.name || ''}` : 'Incoming Call'}</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          /* CSS giống như trong hàm handleVideoCall */
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+          }
+          
+          body {
+            background-color: #000;
+            overflow: hidden;
+          }
+          
+          #remote-video {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            z-index: 0;
+          }
+          
+          #local-video {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 200px;
+            height: 150px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 2px solid #fff;
+            z-index: 1;
+          }
+          
+          .controls {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            padding: 20px;
+            gap: 10px;
+            z-index: 2;
+            background: linear-gradient(transparent, rgba(0,0,0,0.7));
+          }
+          
+          .btn {
+            padding: 12px 20px;
+            border-radius: 50px;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 500;
+            transition: all 0.2s;
+          }
+          
+          .end-call {
+            background-color: #f5222d;
+          }
+          
+          .mute, .video-toggle {
+            background-color: rgba(255,255,255,0.2);
+          }
+          
+          .btn:hover {
+            opacity: 0.8;
+          }
+          
+          .btn svg {
+            margin-right: 6px;
+          }
+        </style>
+      </head>
+      <body>
+        <video id="remote-video" autoplay playsinline></video>
+        <video id="local-video" autoplay playsinline muted></video>
+        
+        <div class="controls">
+          <button id="mute-btn" class="btn mute">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M5 3a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0V3z"/>
+              <path d="M3.5 6.5A.5.5 0 0 1 4 7v1a4 4 0 0 0 8 0V7a.5.5 0 0 1 1 0v1a5 5 0 0 1-4.5 4.975V15h3a.5.5 0 0 1 0 1h-7a.5.5 0 0 1 0-1h3v-2.025A5 5 0 0 1 3 8V7a.5.5 0 0 1 .5-.5z"/>
+            </svg>
+            Tắt mic
+          </button>
+          <button id="video-btn" class="btn video-toggle">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+              <path fill-rule="evenodd" d="M0 5a2 2 0 0 1 2-2h7.5a2 2 0 0 1 1.983 1.738l3.11-1.382A1 1 0 0 1 16 4.269v7.462a1 1 0 0 1-1.406.913l-3.111-1.382A2 2 0 0 1 9.5 13H2a2 2 0 0 1-2-2V5zm11.5 5.175l3.5 1.556V4.269l-3.5 1.556v4.35zM2 4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1H2z"/>
+            </svg>
+            Tắt camera
+          </button>
+          <button id="end-call" class="btn end-call">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M11 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h6zM5 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H5z"/>
+              <path d="M8 14a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/>
+            </svg>
+            Kết thúc
+          </button>
+        </div>
+        
+        <script src="https://cdn.socket.io/4.4.1/socket.io.min.js"></script>
+        <script src="https://unpkg.com/simple-peer@9.11.0/simplepeer.min.js"></script>
+        <script>
+          // Script mã JavaScript tương tự như trong handleVideoCall, nhưng với trạng thái người nhận cuộc gọi
+          const socket = io('${process.env.NEXT_PUBLIC_VIDEO_CHAT_SERVER || 'http://localhost:5000'}');
+          
+          // Thông tin người dùng
+          const myUserId = '${user?.id}';
+          const callerId = '${incomingCall.from}';
+          
+          // DOM elements
+          const localVideo = document.getElementById('local-video');
+          const remoteVideo = document.getElementById('remote-video');
+          const muteBtn = document.getElementById('mute-btn');
+          const videoBtn = document.getElementById('video-btn');
+          const endCallBtn = document.getElementById('end-call');
+          
+          // Biến theo dõi trạng thái
+          let localStream = null;
+          let remoteStream = null;
+          let peer = null;
+          let callAccepted = false;
+          let isMuted = false;
+          let isVideoOff = false;
+          
+          // Signal data từ người gọi
+          const callerSignalData = ${JSON.stringify(signalData)};
+          
+          // Hàm khởi tạo
+          async function initialize() {
+            try {
+              // Lấy video và audio từ người dùng
+              localStream = await navigator.mediaDevices.getUserMedia({ 
+                video: true, 
+                audio: true 
+              });
+              
+              // Hiển thị video người dùng
+              localVideo.srcObject = localStream;
+              
+              // Đăng ký người dùng
+              socket.emit('register', myUserId);
+              
+              // Thiết lập các sự kiện Socket.IO
+              setupSocketEvents();
+              
+              // Thiết lập các sự kiện UI
+              setupUIEvents();
+              
+              // Trả lời cuộc gọi ngay
+              answerCall();
+            } catch (error) {
+              console.error('Không thể khởi tạo video call:', error);
+              alert('Không thể truy cập camera hoặc microphone. Vui lòng kiểm tra quyền truy cập.');
+              socket.emit('call-declined', {
+                to: callerId,
+                from: myUserId,
+                reason: 'Không thể truy cập camera hoặc microphone'
+              });
+              window.close();
+            }
+          }
+          
+          // Thiết lập các sự kiện Socket.IO
+          function setupSocketEvents() {
+            // Cuộc gọi kết thúc
+            socket.on('call-ended', ({ from }: SocketEndCallPayload) => {
+              if (from === callerId) {
+                endCall(false);
+              }
+            });
+          }
+          
+          // Thiết lập các sự kiện UI
+          function setupUIEvents() {
+            // Bật/tắt microphone
+            muteBtn.addEventListener('click', () => {
+              if (localStream) {
+                const audioTracks = localStream.getAudioTracks();
+                if (audioTracks.length > 0) {
+                  const enabled = !audioTracks[0].enabled;
+                  audioTracks[0].enabled = enabled;
+                  isMuted = !enabled;
+                  muteBtn.innerHTML = isMuted ? 
+                    \`<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                      <path d="M6.717 3.55A.5.5 0 0 1 7 4v8a.5.5 0 0 1-.812.39L3.825 10.5H1.5A.5.5 0 0 1 1 10V6a.5.5 0 0 1 .5-.5h2.325l2.363-1.89a.5.5 0 0 1 .529-.06z"/>
+                      <path d="M10.707 11.182A4.486 4.486 0 0 0 12.025 8a4.486 4.486 0 0 0-1.318-3.182L10 5.525A3.489 3.489 0 0 1 11.025 8c0 .966-.392 1.841-1.025 2.475l.707.707z"/>
+                      <path d="M9.293 12.95l.707.707A5.483 5.483 0 0 0 13.025 8a5.483 5.483 0 0 0-3.025-4.95l-.707.707A4.486 4.486 0 0 1 12.025 8c0 1.439-.675 2.72-1.725 3.537l-1.007-.993z"/>
+                      <path d="M10.121 14.536l.707.707A6.48 6.48 0 0 0 14.025 8a6.48 6.48 0 0 0-3.197-5.584l-.707.707A5.483 5.483 0 0 1 13.025 8a5.483 5.483 0 0 1-2.904 4.829l-1 .707z"/>
+                    </svg> Bật mic\` :
+                    \`<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                      <path d="M5 3a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0V3z"/>
+                      <path d="M3.5 6.5A.5.5 0 0 1 4 7v1a4 4 0 0 0 8 0V7a.5.5 0 0 1 1 0v1a5 5 0 0 1-4.5 4.975V15h3a.5.5 0 0 1 0 1h-7a.5.5 0 0 1 0-1h3v-2.025A5 5 0 0 1 3 8V7a.5.5 0 0 1 .5-.5z"/>
+                    </svg> Tắt mic\`;
+                }
+              }
+            });
+            
+            // Bật/tắt camera
+            videoBtn.addEventListener('click', () => {
+              if (localStream) {
+                const videoTracks = localStream.getVideoTracks();
+                if (videoTracks.length > 0) {
+                  const enabled = !videoTracks[0].enabled;
+                  videoTracks[0].enabled = enabled;
+                  isVideoOff = !enabled;
+                  videoBtn.innerHTML = isVideoOff ? 
+                    \`<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                      <path fill-rule="evenodd" d="M10.961 12.365a1.99 1.99 0 0 0 .522-1.103l3.11 1.382A1 1 0 0 0 16 11.731V4.269a1 1 0 0 0-1.406-.913l-3.111 1.382A2 2 0 0 0 9.5 3H4.272l.714 1H9.5a1 1 0 0 1 1 1v6a1 1 0 0 1-.144.518l.605.847zM1.428 4.18A.999.999 0 0 0 1 5v6a1 1 0 0 0 1 1h5.014l.714 1H2a2 2 0 0 1-2-2V5c0-.675.334-1.272.847-1.634l.58.814zM15 11.73l-3.5-1.555v-4.35L15 4.269v7.462zm-4.407 3.56-10-14 .814-.58 10 14-.814.58z"/>
+                    </svg> Bật camera\` :
+                    \`<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                      <path fill-rule="evenodd" d="M0 5a2 2 0 0 1 2-2h7.5a2 2 0 0 1 1.983 1.738l3.11-1.382A1 1 0 0 1 16 4.269v7.462a1 1 0 0 1-1.406.913l-3.111-1.382A2 2 0 0 1 9.5 13H2a2 2 0 0 1-2-2V5zm11.5 5.175l3.5 1.556V4.269l-3.5 1.556v4.35zM2 4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1H2z"/>
+                    </svg> Tắt camera\`;
+                }
+              }
+            });
+            
+            // Kết thúc cuộc gọi
+            endCallBtn.addEventListener('click', () => {
+              endCall(true);
+            });
+          }
+          
+          // Trả lời cuộc gọi
+          function answerCall() {
+            callAccepted = true;
+            
+            // Tạo peer connection
+            peer = new SimplePeer({
+              initiator: false,
+              trickle: false,
+              stream: localStream
+            });
+            
+            // Khi có tín hiệu cục bộ
+            peer.on('signal', (data) => {
+              // Gửi tín hiệu đến người gọi
+              socket.emit('call-accepted', {
+                to: callerId,
+                from: myUserId,
+                signalData: data
+              });
+            });
+            
+            // Khi nhận được stream từ bạn
+            peer.on('stream', (stream) => {
+              remoteStream = stream;
+              remoteVideo.srcObject = stream;
+            });
+            
+            // Xử lý lỗi
+            peer.on('error', (err) => {
+              console.error('Peer connection error:', err);
+              alert('Có lỗi xảy ra với kết nối. Vui lòng thử lại sau.');
+              window.close();
+            });
+            
+            // Signal với dữ liệu từ người gọi
+            peer.signal(callerSignalData);
+          }
+          
+          // Kết thúc cuộc gọi
+          function endCall(sendSignal = true) {
+            // Gửi tín hiệu kết thúc cuộc gọi
+            if (sendSignal) {
+              socket.emit('end-call', {
+                to: callerId,
+                from: myUserId
+              });
+            }
+            
+            // Dừng các stream
+            if (localStream) {
+              localStream.getTracks().forEach(track => track.stop());
+            }
+            
+            // Đóng kết nối peer
+            if (peer) {
+              peer.destroy();
+            }
+            
+            // Đóng socket
+            socket.disconnect();
+            
+            // Đóng cửa sổ
+            window.close();
+          }
+          
+          // Khi cửa sổ đóng
+          window.onbeforeunload = () => {
+            endCall(true);
+          };
+          
+          // Khởi tạo
+          initialize();
+        </script>
+      </body>
+      </html>
+    `);
+    
+    videoCallWindow.document.close();
+    
+    // Đánh dấu đã xử lý cuộc gọi
+    setIncomingCall(null);
+  };
+  
+  const handleDeclineCall = () => {
+    if (incomingCall && socketRef.current) {
+      socketRef.current.emit('call-declined', {
+        to: incomingCall.from,
+        from: user?.id,
+        reason: 'Người dùng từ chối cuộc gọi'
+      });
+    }
+    
+    setIncomingCall(null);
+  };
+
+  useEffect(() => {
+    let ringtone: HTMLAudioElement | null = null;
+    
+    if (incomingCall) {
+      // Tạo âm thanh chuông
+      ringtone = new Audio('https://cdn.pixabay.com/download/audio/2021/08/04/audio_12b0c19592.mp3');
+      ringtone.loop = true;
+      ringtone.play().catch(error => {
+        console.warn('Không thể phát âm thanh do chính sách tự động phát:', error);
+      });
+    }
+    
+    return () => {
+      if (ringtone) {
+        ringtone.pause();
+        ringtone = null;
+      }
+    };
+  }, [incomingCall]);
 
   return (
     <Layout style={{ height: "calc(100vh - 64px)", background: backgroundColor }}>
@@ -2315,6 +2774,61 @@ const MessagesFeature: React.FC = () => {
         existingMemberIds={existingMemberIds}
         existingMembers={existingMembers}
       />
+
+      <Modal
+        title={
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <VideoCameraOutlined style={{ color: brandPrimary, fontSize: 24, marginRight: 10 }} />
+            <span>{localStrings.Messages.IncomingCall}</span>
+          </div>
+        }
+        open={!!incomingCall}
+        closable={false}
+        footer={null}
+        centered
+        width={400}
+      >
+        <div style={{ textAlign: 'center', margin: '20px 0' }}>
+          <Avatar
+            src={incomingCall?.fromUser?.avatar_url}
+            size={80}
+            style={{
+              backgroundColor: !incomingCall?.fromUser?.avatar_url ? brandPrimary : undefined,
+              margin: '0 auto 15px'
+            }}
+          >
+            {!incomingCall?.fromUser?.avatar_url && incomingCall?.fromUser?.name?.charAt(0)}
+          </Avatar>
+          <h2 style={{ marginBottom: 5 }}>
+            {incomingCall?.fromUser 
+              ? `${incomingCall.fromUser.family_name || ''} ${incomingCall.fromUser.name || ''}`.trim() 
+              : localStrings.Messages.Unknown}
+          </h2>
+          <p style={{ color: '#666' }}>{localStrings.Messages.IsCallingYou}</p>
+        </div>
+        
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '15px' }}>
+          <Button
+            type="primary"
+            danger
+            icon={<CloseOutlined />}
+            size="large"
+            onClick={handleDeclineCall}
+            style={{ minWidth: '120px' }}
+          >
+            {localStrings.Messages.Decline}
+          </Button>
+          <Button
+            type="primary"
+            icon={<VideoCameraOutlined />}
+            size="large"
+            onClick={handleAcceptCall}
+            style={{ minWidth: '120px', backgroundColor: '#52c41a', borderColor: '#52c41a' }}
+          >
+            {localStrings.Messages.Accept}
+          </Button>
+        </div>
+      </Modal>
     </Layout>
   );
 };

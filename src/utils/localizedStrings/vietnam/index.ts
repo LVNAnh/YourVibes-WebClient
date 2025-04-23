@@ -492,6 +492,11 @@ export const VnLocalizedStrings = {
     ManageMembers: "Quản lý thành viên",
     Today: "Hôm nay",
     Yesterday: "Hôm qua",
+    IncomingCall: "Cuộc gọi đến",
+    Unknown: "Không rõ",
+    IsCallingYou: "Đang gọi bạn",
+    Decline: "Từ chối",
+    Accept: "Chấp nhận",
   },
   People: {
     FetchUsersFailed: "Tải danh sách người dùng thất bại",

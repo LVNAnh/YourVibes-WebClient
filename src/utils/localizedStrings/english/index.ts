@@ -497,6 +497,11 @@ export const ENGLocalizedStrings = {
     ManageMembers: "Manage Members",
     Today: "Today",
     Yesterday: "Yesterday",
+    IncomingCall: "Incoming Call",
+    Unknown: "Unknown",
+    IsCallingYou: "Is Calling You",
+    Decline: "Decline",
+    Accept: "Accept",
   },
   People: {
     FetchUsersFailed: "Failed to fetch users!",
